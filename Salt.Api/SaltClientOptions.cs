@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Salt.Api;
 
 /// <summary>
@@ -14,7 +16,7 @@ namespace Salt.Api;
 /// that only reads (dashboards, reports).
 /// </para>
 /// </remarks>
-public class SaltClientOptions
+public partial class SaltClientOptions
 {
 	/// <summary>
 	/// The base URL of the Salt API, for example <c>https://salt.example.com</c>. Required, and must use https.
@@ -122,6 +124,35 @@ public class SaltClientOptions
 	public LogLevel RequestLogLevel { get; set; } = LogLevel.Debug;
 
 	/// <summary>
+	/// The state (SLS) that <see cref="SaltClient.PatchDryRunAsync"/> and <see cref="SaltClient.PatchApplyAsync"/> apply with
+	/// <c>state.apply</c>. Defaults to <c>patch.apply</c>. It must contain a package state whose id is <see cref="PackageStateId"/>.
+	/// Letters, digits, '_', '.' and '-' only, not starting with '.' or '-'.
+	/// </summary>
+	/// <remarks>
+	/// The "no patch run in progress" guard of <see cref="SaltClient.PatchApplyAsync"/> looks for running <c>state.apply</c>
+	/// jobs of this state.
+	/// </remarks>
+	public string PatchStateName { get; set; } = "patch.apply";
+
+	/// <summary>
+	/// The <c>__id__</c> of the package state, within <see cref="PatchStateName"/>, whose <c>changes</c> are the package
+	/// upgrades (<c>{package: {old, new}}</c>). Defaults to <c>patch-apply</c>. Must not be empty or contain whitespace.
+	/// </summary>
+	public string PackageStateId { get; set; } = "patch-apply";
+
+	/// <summary>
+	/// The execution function that <see cref="SaltClient.GetPatchStatusAsync"/> calls, in the form <c>module.function</c>.
+	/// Defaults to <c>patchreport.status</c>. It must return the shape of <see cref="PatchStatus"/>.
+	/// </summary>
+	/// <remarks>
+	/// In read-only mode this function must be on the read-only allow-list; a custom function works only with
+	/// <see cref="ReadOnly"/> = <see langword="false"/>. The allow-list is fixed and cannot be extended by configuration,
+	/// so in read-only mode a function other than <c>patchreport.status</c> throws
+	/// <see cref="SaltReadOnlyViolationException"/> before any request is sent.
+	/// </remarks>
+	public string PatchStatusFunction { get; set; } = "patchreport.status";
+
+	/// <summary>
 	/// Validates the options.
 	/// </summary>
 	/// <exception cref="SaltConfigurationException">The options are not valid.</exception>
@@ -191,6 +222,22 @@ public class SaltClientOptions
 		{
 			throw new SaltConfigurationException($"{nameof(DryRunValidityMinutes)} must be greater than zero.");
 		}
+
+		if (string.IsNullOrEmpty(PatchStateName) || !StateNameRegex().IsMatch(PatchStateName))
+		{
+			throw new SaltConfigurationException(
+				$"{nameof(PatchStateName)} must be a state name of letters, digits, '_', '.' and '-', not starting with '.' or '-'.");
+		}
+
+		if (string.IsNullOrEmpty(PackageStateId) || PackageStateId.Any(char.IsWhiteSpace))
+		{
+			throw new SaltConfigurationException($"{nameof(PackageStateId)} must be set and must not contain whitespace.");
+		}
+
+		if (string.IsNullOrEmpty(PatchStatusFunction) || !FunctionNameRegex().IsMatch(PatchStatusFunction))
+		{
+			throw new SaltConfigurationException($"{nameof(PatchStatusFunction)} must be an execution function name of the form 'module.function'.");
+		}
 	}
 
 	/// <summary>
@@ -204,4 +251,11 @@ public class SaltClientOptions
 	/// </summary>
 	public override string ToString()
 		=> $"{nameof(SaltClientOptions)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(Username)} = {Username}, {nameof(ReadOnly)} = {ReadOnly} }}";
+
+	// \z rather than $: $ also matches before a trailing newline.
+	[GeneratedRegex(@"^[A-Za-z0-9_][A-Za-z0-9_.-]*\z", RegexOptions.CultureInvariant)]
+	private static partial Regex StateNameRegex();
+
+	[GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.CultureInvariant)]
+	private static partial Regex FunctionNameRegex();
 }

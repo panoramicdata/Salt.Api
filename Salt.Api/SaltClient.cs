@@ -38,6 +38,7 @@ public sealed partial class SaltClient : IDisposable
 {
 	private const int MaxMinionsPerApplyByDefault = 8;
 	private const int RunningJobsToInspect = 20;
+	private const string DefaultPatchStatusFunction = "patchreport.status";
 
 	private readonly SaltClientOptions _options;
 	private readonly ILogger _logger;
@@ -106,12 +107,20 @@ public sealed partial class SaltClient : IDisposable
 	}
 
 	/// <summary>
-	/// Runs <c>patchreport.status</c>: pending upgrades, kept-back and held packages, reboot flags and the last upgrade time.
+	/// Runs the patch status function, <see cref="SaltClientOptions.PatchStatusFunction"/> (by default <c>patchreport.status</c>):
+	/// pending upgrades, kept-back and held packages, reboot flags and the last upgrade time.
 	/// A minion without the module, or that did not return, is a failure, never "nothing pending".
 	/// </summary>
+	/// <exception cref="SaltReadOnlyViolationException">
+	/// The client is read-only and the configured function is not on the fixed read-only allow-list. Nothing was sent.
+	/// </exception>
 	public async Task<MinionResultDictionary<PatchStatus>> GetPatchStatusAsync(MinionTarget target, CancellationToken cancellationToken = default)
 	{
-		var element = await RunSingleAsync(Lowstate.PatchStatus(target), cancellationToken).ConfigureAwait(false);
+		ArgumentNullException.ThrowIfNull(target);
+		var lowstate = _options.PatchStatusFunction == DefaultPatchStatusFunction
+			? Lowstate.PatchStatus(target)
+			: Lowstate.LocalFunction(target, _options.PatchStatusFunction);
+		var element = await RunSingleAsync(lowstate, cancellationToken).ConfigureAwait(false);
 		return SaltResponseParser.ParseMinions<PatchStatus>(element, target.MinionIds, stringIsFailure: true, falseIsFailure: true, ConvertObject<PatchStatus>);
 	}
 
@@ -216,13 +225,15 @@ public sealed partial class SaltClient : IDisposable
 	}
 
 	/// <summary>
-	/// Runs a patch dry run: <c>state.apply patch.apply</c> with <c>test=True</c>, as an async job, and waits for it.
+	/// Runs a patch dry run: <c>state.apply</c> of <see cref="SaltClientOptions.PatchStateName"/> (by default <c>patch.apply</c>)
+	/// with <c>test=True</c>, as an async job, and waits for it.
 	/// </summary>
 	/// <remarks>
 	/// <para>Not permitted in read-only mode: a dry run refreshes apt and takes the apt lock on each minion.</para>
 	/// <para>
 	/// A state that would change something has <see cref="StateResult.Result"/> <see langword="null"/>.
-	/// <see cref="PatchStateRun.PackageChanges"/> lists the packages that would be upgraded. The dry run is not an exact
+	/// <see cref="PatchStateRun.PackageChanges"/> lists the packages that would be upgraded, read from the <c>pkg</c> state whose
+	/// id is <see cref="SaltClientOptions.PackageStateId"/>. The dry run is not an exact
 	/// preview: it can list kept-back packages that the real apply will not install, so treat it as the larger set.
 	/// </para>
 	/// <para>
@@ -247,7 +258,8 @@ public sealed partial class SaltClient : IDisposable
 	}
 
 	/// <summary>
-	/// Runs a REAL patch apply: <c>state.apply patch.apply</c>, which installs packages as root, as an async job, and waits for it.
+	/// Runs a REAL patch apply: <c>state.apply</c> of <see cref="SaltClientOptions.PatchStateName"/> (by default <c>patch.apply</c>),
+	/// which installs packages as root, as an async job, and waits for it.
 	/// </summary>
 	/// <remarks>
 	/// <para>
@@ -405,7 +417,7 @@ public sealed partial class SaltClient : IDisposable
 			throw new ArgumentOutOfRangeException(nameof(timeout), "The timeout must be positive.");
 		}
 
-		var job = await SubmitCoreAsync(Lowstate.PatchStateApply(target, test), cancellationToken).ConfigureAwait(false);
+		var job = await SubmitCoreAsync(Lowstate.PatchStateApply(target, _options.PatchStateName, test), cancellationToken).ConfigureAwait(false);
 		if (job is null)
 		{
 			return new PatchRunResult
@@ -437,7 +449,7 @@ public sealed partial class SaltClient : IDisposable
 
 			try
 			{
-				results.Add(MinionResult.Success(minionId, SaltResponseParser.ParseStateRun(minionReturn)));
+				results.Add(MinionResult.Success(minionId, SaltResponseParser.ParseStateRun(minionReturn, _options.PackageStateId)));
 			}
 			catch (FormatException ex)
 			{
@@ -523,7 +535,7 @@ public sealed partial class SaltClient : IDisposable
 	{
 		var jobs = await GetJobsAsync(cancellationToken).ConfigureAwait(false);
 		var patchJobs = jobs
-			.Where(j => j.Function == "state.apply" && j.HasArgument("patch.apply"))
+			.Where(j => j.Function == "state.apply" && j.HasArgument(_options.PatchStateName))
 			.Take(RunningJobsToInspect);
 
 		foreach (var job in patchJobs)
@@ -533,7 +545,7 @@ public sealed partial class SaltClient : IDisposable
 			if (busy.Count > 0)
 			{
 				throw new SaltPatchGuardException(
-					$"A patch run (job {job.Jid}) has not returned yet on: {string.Join(", ", busy)}. Two runs on one minion contend for the apt lock.");
+					$"A patch run of {_options.PatchStateName} (job {job.Jid}) has not returned yet on: {string.Join(", ", busy)}. Two runs on one minion contend for the apt lock.");
 			}
 		}
 	}

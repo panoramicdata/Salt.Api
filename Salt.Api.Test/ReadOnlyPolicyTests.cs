@@ -182,7 +182,7 @@ public class ReadOnlyPolicyTests
 	{
 		foreach (var test in new[] { true, false })
 		{
-			var lowstate = Lowstate.PatchStateApply(MinionTarget.List("vm-01"), test);
+			var lowstate = Lowstate.PatchStateApply(MinionTarget.List("vm-01"), "patch.apply", test);
 			ReadOnlyPolicy.CheckBody(JsonSerializer.Serialize(new[] { lowstate }, SaltJson.Options)).Should().NotBeNull();
 		}
 	}

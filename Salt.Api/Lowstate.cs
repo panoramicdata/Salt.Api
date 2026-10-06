@@ -11,8 +11,8 @@ namespace Salt.Api;
 /// mode the result is still checked against the allow-list before anything is sent.
 /// </para>
 /// <para>
-/// The patch state (<c>state.apply patch.apply</c>) is never built here; use <see cref="SaltClient.PatchDryRunAsync"/>
-/// and <see cref="SaltClient.PatchApplyAsync"/>.
+/// The patch state (<c>state.apply</c> of <see cref="SaltClientOptions.PatchStateName"/>) is never built here; use
+/// <see cref="SaltClient.PatchDryRunAsync"/> and <see cref="SaltClient.PatchApplyAsync"/>.
 /// </para>
 /// </remarks>
 public sealed class Lowstate
@@ -101,7 +101,8 @@ public sealed class Lowstate
 		=> Local(target, "test.ping", null, null, timeoutSeconds);
 
 	/// <summary>
-	/// <c>patchreport.status</c>: the read-only patch report for each minion.
+	/// <c>patchreport.status</c>: the read-only patch report for each minion. This always builds the default function;
+	/// <see cref="SaltClient.GetPatchStatusAsync"/> calls <see cref="SaltClientOptions.PatchStatusFunction"/> instead.
 	/// </summary>
 	public static Lowstate PatchStatus(MinionTarget target, int? timeoutSeconds = null)
 		=> Local(target, "patchreport.status", null, null, timeoutSeconds);
@@ -174,19 +175,38 @@ public sealed class Lowstate
 	}
 
 	/// <summary>
-	/// The patch state, <c>state.apply patch.apply</c>, as an async job. Internal: only the guarded patch methods use it.
+	/// The patch state, <c>state.apply &lt;stateName&gt;</c>, as an async job. Internal: only the guarded patch methods use it.
 	/// </summary>
-	internal static Lowstate PatchStateApply(MinionTarget target, bool test)
-		=> new(
+	/// <param name="target">The minions.</param>
+	/// <param name="stateName">The state to apply: <see cref="SaltClientOptions.PatchStateName"/>, already validated.</param>
+	/// <param name="test">Whether this is a dry run (<c>test=True</c>).</param>
+	internal static Lowstate PatchStateApply(MinionTarget target, string stateName, bool test)
+	{
+		ArgumentNullException.ThrowIfNull(target);
+		ArgumentException.ThrowIfNullOrWhiteSpace(stateName);
+		return new(
 			"local_async",
 			"state.apply",
 			target,
 			null,
 			null,
-			["patch.apply"],
+			[stateName],
 			test ? new Dictionary<string, object?> { ["test"] = true } : null,
 			null,
 			false);
+	}
+
+	/// <summary>
+	/// A <c>local</c> call of a configured execution function with no arguments, such as
+	/// <see cref="SaltClientOptions.PatchStatusFunction"/>. Internal, and not raw: it needs no
+	/// <see cref="SaltClientOptions.AllowRawLowstate"/>, but in read-only mode it is still checked against the fixed
+	/// allow-list, so a function that is not on it is refused before anything is sent.
+	/// </summary>
+	internal static Lowstate LocalFunction(MinionTarget target, string function, int? timeoutSeconds = null)
+	{
+		ArgumentException.ThrowIfNullOrWhiteSpace(function);
+		return Local(target, function, null, null, timeoutSeconds);
+	}
 
 	/// <summary>
 	/// The same call as an async job (<c>local_async</c>), which returns a jid at once.

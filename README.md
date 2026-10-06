@@ -75,10 +75,11 @@ the token is about to expire or Salt answers HTTP 401.
 There is deliberately no method for `GET /minions`: it returns every grain of every minion (about 100 KB for six
 minions) and grows with the estate.
 
-`GetPatchStatusAsync` calls `patchreport.status`, a small custom execution module that is not part of Salt. Its result
-maps to `PatchStatus`: `PendingUpgrades`, `PendingCount`, `KeptBack`, `Held`, `KernelPackageNeedsReboot`,
-`RebootRequiredFile`, `LastUpgradeEpoch` and `LastUpgradeSource`, plus `RebootRequired`, `PatchingNeeded` and
-`NeedsAttention`. A minion without the module returns a string, which is reported as a failure.
+`GetPatchStatusAsync` calls `patchreport.status` by default, a small custom execution module that is not part of Salt
+(see [Salt content this package expects](#salt-content-this-package-expects)). Its result maps to `PatchStatus`:
+`PendingUpgrades`, `PendingCount`, `KeptBack`, `Held`, `KernelPackageNeedsReboot`, `RebootRequiredFile`,
+`LastUpgradeEpoch` and `LastUpgradeSource`, plus `RebootRequired`, `PatchingNeeded` and `NeedsAttention`. A minion
+without the module returns a string, which is reported as a failure.
 
 ## Read-only mode
 
@@ -183,6 +184,22 @@ Workflow rules the client cannot check for you:
 - Do not apply during a node drain or storage recovery.
 - The dry run is not an exact preview: it can list kept-back packages that the real apply will not install.
 
+### Salt content this package expects
+
+`PingAsync`, the grains, key, job and minion calls work against any Salt master. The patch methods need content on
+your Salt master that Salt does not ship. Three options name it; the defaults are the names this package was built
+against.
+
+| Option | Default | What it must be |
+|---|---|---|
+| `PatchStatusFunction` | `patchreport.status` | An execution function (`module.function`) that changes nothing and returns, per minion, an object with `pending_upgrades` (package to version), `pending_count`, `kept_back`, `held`, `kernelpkg_needs_reboot` (bool or null), `reboot_required_file`, `last_upgrade_epoch` (epoch seconds or null) and `last_upgrade_source`. |
+| `PatchStateName` | `patch.apply` | The SLS applied by `PatchDryRunAsync` and `PatchApplyAsync`. It must work with `test=True`. |
+| `PackageStateId` | `patch-apply` | The `__id__` of the `pkg` state in that SLS whose `changes` list the upgrades as `{"<package>": {"old": "...", "new": "..."}}`, for example a `pkg.uptodate` state. It is exposed as `PatchStateRun.PackageState`. |
+
+The read-only allow-list is fixed and cannot be extended by configuration. A custom `PatchStatusFunction` therefore
+works only with `ReadOnly = false`. In read-only mode it throws `SaltReadOnlyViolationException` before any request
+is sent.
+
 ## Behaviours handled
 
 These were measured against a live Salt 3008 `rest_cherrypy` deployment behind HAProxy.
@@ -221,6 +238,7 @@ These were measured against a live Salt 3008 `rest_cherrypy` deployment behind H
 | `InitialBackOffDelaySeconds`, `BackOffDelayFactor`, `MaxBackOffDelaySeconds` | 5, 2.0, 30 | |
 | `TokenRefreshMarginSeconds` | 60 | |
 | `DryRunValidityMinutes` | 60 | |
+| `PatchStatusFunction`, `PatchStateName`, `PackageStateId` | `patchreport.status`, `patch.apply`, `patch-apply` | see [Salt content this package expects](#salt-content-this-package-expects) |
 | `UserAgent` | `Salt.Api/{version}` | |
 | `RequestLogLevel` | `Debug` | method, path, status and duration only |
 

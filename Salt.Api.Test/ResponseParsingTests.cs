@@ -301,14 +301,16 @@ public class ResponseParsingTests
 		minionReturn.Success.Should().BeTrue();
 		minionReturn.Outputter.Should().Be("highstate");
 
-		var run = SaltResponseParser.ParseStateRun(minionReturn);
+		var run = SaltResponseParser.ParseStateRun(minionReturn, "patch-apply");
 		run.States.Should().HaveCount(5);
 		run.States.Select(s => s.RunNumber).Should().BeInAscendingOrder();
 		run.HasFailures.Should().BeFalse();
 		run.PackageChanges.Should().HaveCount(3);
 		run.PackageChanges["libfreetype6"].Should().Be(new PackageChange("2.11.1+dfsg-1ubuntu0.3", "2.11.1+dfsg-1ubuntu0.4"));
 		run.ChangedStates.Select(s => s.Id).Should().BeEquivalentTo("patch-needrestart-config", "patch-apply");
-		var packageState = run.States.Single(s => s.Key == PatchStateRun.PackageStateKey);
+		var packageState = run.PackageState!;
+		packageState.Key.Should().Be("pkg_|-patch-apply_|-patch-apply_|-uptodate");
+		run.States.Should().Contain(packageState);
 		packageState.Result.Should().BeNull("in a dry run, null means the state would change");
 		packageState.Comment.Should().Be("System update will be performed");
 		packageState.DurationMilliseconds.Should().BeApproximately(22223.479, 0.001);

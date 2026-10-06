@@ -5,6 +5,9 @@ namespace Salt.Api;
 /// </summary>
 internal static class SaltResponseParser
 {
+	/// <summary>The start of the key of every <c>pkg</c> state: <c>pkg_|-&lt;id&gt;_|-&lt;name&gt;_|-&lt;function&gt;</c>.</summary>
+	private const string PackageStateKeyPrefix = "pkg_|-";
+
 	/// <summary>
 	/// Returns element <paramref name="index"/> of the <c>return</c> array.
 	/// </summary>
@@ -171,9 +174,12 @@ internal static class SaltResponseParser
 	/// <summary>
 	/// Maps one minion's state-run return to a <see cref="PatchStateRun"/>.
 	/// </summary>
+	/// <param name="minionReturn">The minion's return.</param>
+	/// <param name="packageStateId">The <c>__id__</c> of the <c>pkg</c> state whose changes are the package upgrades.</param>
 	/// <exception cref="FormatException">The return is not an object of state results (for example a render error, which Salt returns as a list of strings).</exception>
-	internal static PatchStateRun ParseStateRun(JobMinionReturn minionReturn)
+	internal static PatchStateRun ParseStateRun(JobMinionReturn minionReturn, string packageStateId)
 	{
+		ArgumentException.ThrowIfNullOrEmpty(packageStateId);
 		var states = minionReturn.Return;
 		if (states.ValueKind != JsonValueKind.Object)
 		{
@@ -193,12 +199,13 @@ internal static class SaltResponseParser
 			results.Add(state);
 		}
 
+		var packageState = results.FirstOrDefault(s =>
+			s.Key.StartsWith(PackageStateKeyPrefix, StringComparison.Ordinal)
+			&& string.Equals(s.Id, packageStateId, StringComparison.Ordinal));
 		var packageChanges = new Dictionary<string, PackageChange>(StringComparer.Ordinal);
-		if (states.TryGetProperty(PatchStateRun.PackageStateKey, out var packageState)
-			&& packageState.TryGetProperty("changes", out var changes)
-			&& changes.ValueKind == JsonValueKind.Object)
+		if (packageState is not null && packageState.Changes.ValueKind == JsonValueKind.Object)
 		{
-			foreach (var change in changes.EnumerateObject())
+			foreach (var change in packageState.Changes.EnumerateObject())
 			{
 				if (change.Value.ValueKind == JsonValueKind.Object)
 				{
@@ -212,6 +219,7 @@ internal static class SaltResponseParser
 			States = [.. results.OrderBy(s => s.RunNumber)],
 			RetCode = minionReturn.RetCode,
 			Success = minionReturn.Success,
+			PackageState = packageState,
 			PackageChanges = packageChanges,
 		};
 	}

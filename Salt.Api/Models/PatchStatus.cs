@@ -1,7 +1,8 @@
 namespace Salt.Api.Models;
 
 /// <summary>
-/// The return value of the custom execution module <c>patchreport.status</c>. It is read-only and changes nothing.
+/// The return value of the patch status function, <see cref="SaltClientOptions.PatchStatusFunction"/> (by default the
+/// custom execution module function <c>patchreport.status</c>). It is read-only and changes nothing.
 /// </summary>
 public sealed class PatchStatus
 {

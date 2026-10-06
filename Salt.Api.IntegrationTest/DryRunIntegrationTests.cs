@@ -1,7 +1,7 @@
 namespace Salt.Api.IntegrationTest;
 
 /// <summary>
-/// The patch dry run (<c>state.apply patch.apply test=True</c>) against ONE test minion. It changes no package, but it
+/// The patch dry run (<c>state.apply</c> of the default patch state, <c>patch.apply</c>, with <c>test=True</c>) against ONE test minion. It changes no package, but it
 /// refreshes apt and takes the apt lock on that minion for about half a minute.
 /// </summary>
 /// <remarks>
@@ -25,8 +25,7 @@ public class DryRunIntegrationTests(SaltApiFixture fixture)
 		var minion = result.Minions[minionId];
 		minion.Succeeded.Should().BeTrue(minion.FailureText);
 		minion.Value!.States.Should().NotBeEmpty();
-		minion.Value.States.Should().Contain(s => s.Key == PatchStateRun.PackageStateKey);
-		minion.Value.States.Where(s => s.Key == PatchStateRun.PackageStateKey)
-			.Should().OnlyContain(s => s.Result == null || s.Result == true, "a dry run never reports a package state as done");
+		minion.Value.PackageState.Should().NotBeNull("the patch state must contain the configured package state");
+		minion.Value.PackageState!.Result.Should().NotBe(false, "a dry run never reports a package state as failed");
 	}
 }

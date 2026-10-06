@@ -24,6 +24,7 @@ tool can use to dry-run and apply the patch state, without a forbidden or accide
 | `GET /minions` | No method | It returns every grain of every minion. |
 | Request bodies | Always sent with a Content-Length | Measured live: `rest_cherrypy` answers a chunked JSON body with HTTP 500. |
 | Options | Copied when the client is built | Turning off `ReadOnly` on a shared options object must not change a live client. |
+| Estate-specific Salt content | `PatchStatusFunction`, `PatchStateName` and `PackageStateId` options, defaulting to the original names; the read-only allow-list stays fixed | A public package must not hard-code one estate's custom module and state. Letting configuration extend the allow-list would let a typo or a hostile config permit a write in read-only mode, so a custom status function needs `ReadOnly = false`. |
 
 ## Units
 
