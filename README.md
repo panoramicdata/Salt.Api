@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![CI](https://github.com/panoramicdata/Salt.Api/actions/workflows/ci.yml/badge.svg)](https://github.com/panoramicdata/Salt.Api/actions/workflows/ci.yml)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/8dbdaba778df48ea804b033a564f8e24)](https://app.codacy.com/gh/panoramicdata/Salt.Api/dashboard)
+[![Codacy Coverage](https://app.codacy.com/project/badge/Coverage/8dbdaba778df48ea804b033a564f8e24)](https://app.codacy.com/gh/panoramicdata/Salt.Api/dashboard)
 
 A typed, async .NET client for the [Salt Project](https://saltproject.io/) REST API
 ([`rest_cherrypy`](https://docs.saltproject.io/en/latest/ref/netapi/all/salt.netapi.rest_cherrypy.html)), built for
@@ -241,8 +243,8 @@ option to turn that off.
 ## Quality
 
 - `TreatWarningsAsErrors`, nullable reference types, and XML documentation on every public member.
-- **Unit tests:** 226 xUnit v3 tests, with skipped tests failing the run. They replay real responses captured from a
-  live Salt API (with host and account names replaced), and cover:
+- **Unit tests:** xUnit v3, with skipped tests failing the run, and about 90% line coverage reported to Codacy from CI.
+  They replay real responses captured from a live Salt API (with host and account names replaced), and cover:
   - the allow-list, in both directions;
   - "refused before any request";
   - the 401 re-login;
@@ -253,6 +255,8 @@ option to turn that off.
 - **Integration tests** (`Salt.Api.IntegrationTest`) run **read-only calls and one dry run** against a test Salt API.
   They read `SALT_API_BASE_URL`, `SALT_API_USERNAME` and `SALT_API_PASSWORD`. A missing variable fails the test with
   instructions; tests are never skipped. They never perform a real apply.
+- Changes that touch the allow-list, the apply guards or retries follow [docs/SAFETY.md](docs/SAFETY.md), alongside
+  [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Links
 
