@@ -27,7 +27,7 @@ by that tool.
 ## Tools
 
 - Build and test with `dotnet build` / `dotnet test`.
-- Use `git` for version control, following `CONTRIBUTING.md` where present.
+- Use `git` for version control, following the repository's contributing guide.
 
 ## Shared instructions
 
