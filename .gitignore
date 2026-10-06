@@ -273,3 +273,6 @@ __pycache__/
 # Local secrets
 nuget-key.txt
 secrets.json
+
+# Local Claude Code worktrees and settings
+.claude/

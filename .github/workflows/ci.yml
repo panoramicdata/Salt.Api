@@ -12,12 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
 
@@ -33,7 +33,7 @@ jobs:
       run: dotnet test --project Salt.Api.Test/Salt.Api.Test.csproj --configuration Release --no-build
 
     - name: Pack
-      run: dotnet pack Salt.Api/Salt.Api.csproj --configuration Release --no-build --output ./artifacts
+      run: dotnet pack --configuration Release --no-build --output ./artifacts
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v7
@@ -42,6 +42,47 @@ jobs:
         path: |
           ./artifacts/*.nupkg
           ./artifacts/*.snupkg
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Build tests
+      run: dotnet build Salt.Api.Test/Salt.Api.Test.csproj --configuration Debug
+
+    - name: Run unit tests with coverage
+      run: >-
+        ./Salt.Api.Test/bin/Debug/net10.0/Salt.Api.Test
+        --coverage
+        --coverage-settings coverage.config
+        --coverage-output-format cobertura
+        --coverage-output coverage.cobertura.xml
+
+    - name: Upload coverage to Codacy
+      if: github.event_name == 'push'
+      continue-on-error: true
+      uses: codacy/codacy-coverage-reporter-action@v1
+      with:
+        project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+        coverage-reports: Salt.Api.Test/bin/Debug/net10.0/TestResults/coverage.cobertura.xml
+
+    - name: Upload coverage artifact
+      if: always()
+      continue-on-error: true
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage
+        path: Salt.Api.Test/bin/Debug/net10.0/TestResults/coverage.cobertura.xml
+        retention-days: 7
 
   publish:
     needs: build
@@ -57,7 +98,7 @@ jobs:
         path: ./artifacts
 
     - name: Setup .NET
-      uses: actions/setup-dotnet@v5
+      uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
 
@@ -67,5 +108,6 @@ jobs:
       with:
         user: david_n_m_bond
 
+    # No --skip-duplicate: a nuget.org Conflict must fail the run, not pass it with nothing published.
     - name: Push to NuGet
-      run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push ./artifacts/*.nupkg --api-key ${{ steps.login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json

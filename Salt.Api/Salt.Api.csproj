@@ -2,6 +2,7 @@
 
 	<PropertyGroup>
 		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
 		<NeutralResourcesLanguage>en</NeutralResourcesLanguage>
 		<!-- RF006: Refit's source generator falls back to the reflection request builder for some
 		     signatures. SaltClient creates its client with RestService.For<T>(), which the diagnostic
