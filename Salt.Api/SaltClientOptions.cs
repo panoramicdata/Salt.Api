@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Salt.Api;
 
 /// <summary>
@@ -14,7 +16,7 @@ namespace Salt.Api;
 /// that only reads (dashboards, reports).
 /// </para>
 /// </remarks>
-public class SaltClientOptions
+public partial class SaltClientOptions
 {
 	/// <summary>
 	/// The base URL of the Salt API, for example <c>https://salt.example.com</c>. Required, and must use https.
@@ -57,7 +59,7 @@ public class SaltClientOptions
 	public bool ReadOnly { get; set; }
 
 	/// <summary>
-	/// When <see langword="true"/>, <see cref="Lowstate.Raw"/> lowstates may be executed. Defaults to <see langword="false"/>.
+	/// When <see langword="true"/>, <see cref="Lowstate.Raw(string, string)"/> lowstates may be executed. Defaults to <see langword="false"/>.
 	/// In read-only mode a raw lowstate must still pass the read-only allow-list.
 	/// </summary>
 	public bool AllowRawLowstate { get; set; }
@@ -122,74 +124,96 @@ public class SaltClientOptions
 	public LogLevel RequestLogLevel { get; set; } = LogLevel.Debug;
 
 	/// <summary>
+	/// The state (SLS) that <see cref="SaltClient.PatchDryRunAsync"/> and <see cref="SaltClient.PatchApplyAsync"/> apply with
+	/// <c>state.apply</c>. Defaults to <c>patch.apply</c>. It must contain a package state whose id is <see cref="PackageStateId"/>.
+	/// Letters, digits, '_', '.' and '-' only, not starting with '.' or '-'.
+	/// </summary>
+	/// <remarks>
+	/// The "no patch run in progress" guard of <see cref="SaltClient.PatchApplyAsync"/> looks for running <c>state.apply</c>
+	/// jobs of this state.
+	/// </remarks>
+	public string PatchStateName { get; set; } = "patch.apply";
+
+	/// <summary>
+	/// The <c>__id__</c> of the package state, within <see cref="PatchStateName"/>, whose <c>changes</c> are the package
+	/// upgrades (<c>{package: {old, new}}</c>). Defaults to <c>patch-apply</c>. Must not be empty or contain whitespace.
+	/// </summary>
+	public string PackageStateId { get; set; } = "patch-apply";
+
+	/// <summary>
+	/// The execution function that <see cref="SaltClient.GetPatchStatusAsync"/> calls, in the form <c>module.function</c>.
+	/// Defaults to <c>patchreport.status</c>. It must return the shape of <see cref="PatchStatus"/>.
+	/// </summary>
+	/// <remarks>
+	/// In read-only mode this function must be on the read-only allow-list; a custom function works only with
+	/// <see cref="ReadOnly"/> = <see langword="false"/>. The allow-list is fixed and cannot be extended by configuration,
+	/// so in read-only mode a function other than <c>patchreport.status</c> throws
+	/// <see cref="SaltReadOnlyViolationException"/> before any request is sent.
+	/// </remarks>
+	public string PatchStatusFunction { get; set; } = "patchreport.status";
+
+	/// <summary>
 	/// Validates the options.
 	/// </summary>
 	/// <exception cref="SaltConfigurationException">The options are not valid.</exception>
 	public void Validate()
 	{
-		if (string.IsNullOrWhiteSpace(BaseUrl))
-		{
-			throw new SaltConfigurationException($"{nameof(BaseUrl)} must be set.");
-		}
+		ValidateConnection();
+		ValidateTimings();
+		ValidateContentNames();
+	}
 
-		if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
-		{
-			throw new SaltConfigurationException($"{nameof(BaseUrl)} must be an absolute https URL.");
-		}
+	private void ValidateConnection()
+	{
+		Require(!string.IsNullOrWhiteSpace(BaseUrl), $"{nameof(BaseUrl)} must be set.");
+		Require(IsAbsoluteHttpsUrl(BaseUrl, out var uri), $"{nameof(BaseUrl)} must be an absolute https URL.");
+		Require(HasNoQueryFragmentOrUserInfo(uri!), $"{nameof(BaseUrl)} must not contain a query, fragment or user information.");
+		Require(!string.IsNullOrWhiteSpace(Username), $"{nameof(Username)} must be set.");
+		Require(PasswordProvider is not null || !string.IsNullOrEmpty(Password), $"Either {nameof(Password)} or {nameof(PasswordProvider)} must be set.");
+		Require(!string.IsNullOrWhiteSpace(Eauth), $"{nameof(Eauth)} must be set.");
+	}
 
-		if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.Fragment) || !string.IsNullOrEmpty(uri.UserInfo))
-		{
-			throw new SaltConfigurationException($"{nameof(BaseUrl)} must not contain a query, fragment or user information.");
-		}
+	private void ValidateTimings()
+	{
+		Require(DefaultMinionTimeoutSeconds > 0, $"{nameof(DefaultMinionTimeoutSeconds)} must be greater than zero.");
+		Require(HttpClientTimeoutSeconds > DefaultMinionTimeoutSeconds, $"{nameof(HttpClientTimeoutSeconds)} must be greater than {nameof(DefaultMinionTimeoutSeconds)}.");
+		Require(JobPollIntervalSeconds > 0, $"{nameof(JobPollIntervalSeconds)} must be greater than zero.");
+		Require(MaxAttemptCount >= 1, $"{nameof(MaxAttemptCount)} must be at least 1.");
+		Require(AreBackOffSettingsValid(), "Back-off delays must not be negative, and the back-off factor must be at least 1.0.");
+		Require(TokenRefreshMarginSeconds >= 0, $"{nameof(TokenRefreshMarginSeconds)} must not be negative.");
+		Require(DryRunValidityMinutes > 0, $"{nameof(DryRunValidityMinutes)} must be greater than zero.");
+	}
 
-		if (string.IsNullOrWhiteSpace(Username))
-		{
-			throw new SaltConfigurationException($"{nameof(Username)} must be set.");
-		}
+	private void ValidateContentNames()
+	{
+		Require(
+			IsMatch(PatchStateName, StateNameRegex()),
+			$"{nameof(PatchStateName)} must be a state name of letters, digits, '_', '.' and '-', not starting with '.' or '-'.");
+		Require(
+			!string.IsNullOrEmpty(PackageStateId) && !PackageStateId.Any(char.IsWhiteSpace),
+			$"{nameof(PackageStateId)} must be set and must not contain whitespace.");
+		Require(
+			IsMatch(PatchStatusFunction, FunctionNameRegex()),
+			$"{nameof(PatchStatusFunction)} must be an execution function name of the form 'module.function'.");
+	}
 
-		if (PasswordProvider is null && string.IsNullOrEmpty(Password))
-		{
-			throw new SaltConfigurationException($"Either {nameof(Password)} or {nameof(PasswordProvider)} must be set.");
-		}
+	private bool AreBackOffSettingsValid()
+		=> InitialBackOffDelaySeconds >= 0 && MaxBackOffDelaySeconds >= 0 && BackOffDelayFactor >= 1.0;
 
-		if (string.IsNullOrWhiteSpace(Eauth))
-		{
-			throw new SaltConfigurationException($"{nameof(Eauth)} must be set.");
-		}
+	private static bool IsAbsoluteHttpsUrl(string url, out Uri? uri)
+		=> Uri.TryCreate(url, UriKind.Absolute, out uri) && uri.Scheme == Uri.UriSchemeHttps;
 
-		if (DefaultMinionTimeoutSeconds <= 0)
-		{
-			throw new SaltConfigurationException($"{nameof(DefaultMinionTimeoutSeconds)} must be greater than zero.");
-		}
+	private static bool HasNoQueryFragmentOrUserInfo(Uri uri)
+		=> string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment) && string.IsNullOrEmpty(uri.UserInfo);
 
-		if (HttpClientTimeoutSeconds <= DefaultMinionTimeoutSeconds)
-		{
-			throw new SaltConfigurationException($"{nameof(HttpClientTimeoutSeconds)} must be greater than {nameof(DefaultMinionTimeoutSeconds)}.");
-		}
+	private static bool IsMatch(string? value, Regex regex)
+		=> !string.IsNullOrEmpty(value) && regex.IsMatch(value);
 
-		if (JobPollIntervalSeconds <= 0)
+	private static void Require(bool isValid, string message)
+	{
+		if (!isValid)
 		{
-			throw new SaltConfigurationException($"{nameof(JobPollIntervalSeconds)} must be greater than zero.");
-		}
-
-		if (MaxAttemptCount < 1)
-		{
-			throw new SaltConfigurationException($"{nameof(MaxAttemptCount)} must be at least 1.");
-		}
-
-		if (InitialBackOffDelaySeconds < 0 || MaxBackOffDelaySeconds < 0 || BackOffDelayFactor < 1.0)
-		{
-			throw new SaltConfigurationException("Back-off delays must not be negative, and the back-off factor must be at least 1.0.");
-		}
-
-		if (TokenRefreshMarginSeconds < 0)
-		{
-			throw new SaltConfigurationException($"{nameof(TokenRefreshMarginSeconds)} must not be negative.");
-		}
-
-		if (DryRunValidityMinutes <= 0)
-		{
-			throw new SaltConfigurationException($"{nameof(DryRunValidityMinutes)} must be greater than zero.");
+			throw new SaltConfigurationException(message);
 		}
 	}
 
@@ -204,4 +228,11 @@ public class SaltClientOptions
 	/// </summary>
 	public override string ToString()
 		=> $"{nameof(SaltClientOptions)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(Username)} = {Username}, {nameof(ReadOnly)} = {ReadOnly} }}";
+
+	// \z rather than $: $ also matches before a trailing newline.
+	[GeneratedRegex(@"^[A-Za-z0-9_][A-Za-z0-9_.-]*\z", RegexOptions.CultureInvariant)]
+	private static partial Regex StateNameRegex();
+
+	[GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*\z", RegexOptions.CultureInvariant)]
+	private static partial Regex FunctionNameRegex();
 }

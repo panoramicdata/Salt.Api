@@ -1,8 +1,8 @@
 namespace Salt.Api.Models;
 
 /// <summary>
-/// A request for a patch dry run: <c>state.apply patch.apply</c> with <c>test=True</c>, which reports what a real apply
-/// would change. It still refreshes apt and takes the apt lock on each minion.
+/// A request for a patch dry run: <c>state.apply</c> of <see cref="SaltClientOptions.PatchStateName"/> (by default
+/// <c>patch.apply</c>) with <c>test=True</c>, which reports what a real apply would change. It still refreshes apt and takes the apt lock on each minion.
 /// </summary>
 public sealed class PatchDryRunRequest
 {
@@ -14,7 +14,8 @@ public sealed class PatchDryRunRequest
 }
 
 /// <summary>
-/// A request for a REAL patch apply: <c>state.apply patch.apply</c> without <c>test</c>. This installs packages as root.
+/// A request for a REAL patch apply: <c>state.apply</c> of <see cref="SaltClientOptions.PatchStateName"/> (by default
+/// <c>patch.apply</c>) without <c>test</c>. This installs packages as root.
 /// </summary>
 /// <remarks>
 /// <para>The client refuses the request, before anything is sent, unless all of these hold:</para>
@@ -112,9 +113,6 @@ public sealed record PackageChange(string? Old, string? New);
 /// </summary>
 public sealed class PatchStateRun
 {
-	/// <summary>The state key whose changes are the package upgrades.</summary>
-	public const string PackageStateKey = "pkg_|-patch-apply_|-patch-apply_|-uptodate";
-
 	/// <summary>The states, in run order.</summary>
 	public IReadOnlyList<StateResult> States { get; init; } = [];
 
@@ -124,7 +122,16 @@ public sealed class PatchStateRun
 	/// <summary>Whether Salt reported success. This does not mean nothing would change.</summary>
 	public bool? Success { get; init; }
 
-	/// <summary>Package upgrades: in a dry run, what would be installed; in a real apply, what was installed.</summary>
+	/// <summary>
+	/// The package state whose <c>changes</c> are the package upgrades: the <c>pkg</c> state whose id is
+	/// <see cref="SaltClientOptions.PackageStateId"/>. <see langword="null"/> when the run has no such state.
+	/// </summary>
+	public StateResult? PackageState { get; init; }
+
+	/// <summary>
+	/// Package upgrades, read from <see cref="PackageState"/>: in a dry run, what would be installed; in a real apply,
+	/// what was installed. Empty when there is no package state.
+	/// </summary>
 	public IReadOnlyDictionary<string, PackageChange> PackageChanges { get; init; } = new Dictionary<string, PackageChange>();
 
 	/// <summary>Whether any state failed. A class-based refusal to patch appears here, not as an HTTP error.</summary>

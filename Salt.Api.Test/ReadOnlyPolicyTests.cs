@@ -164,6 +164,7 @@ public class ReadOnlyPolicyTests
 			{
 				var t when t == typeof(MinionTarget) => (object?)MinionTarget.List("vm-01"),
 				var t when t == typeof(string) => "patch_class",
+				var t when t == typeof(int) => 60,
 				_ => null,
 			}).ToArray();
 
@@ -182,7 +183,7 @@ public class ReadOnlyPolicyTests
 	{
 		foreach (var test in new[] { true, false })
 		{
-			var lowstate = Lowstate.PatchStateApply(MinionTarget.List("vm-01"), test);
+			var lowstate = Lowstate.PatchStateApply(MinionTarget.List("vm-01"), "patch.apply", test);
 			ReadOnlyPolicy.CheckBody(JsonSerializer.Serialize(new[] { lowstate }, SaltJson.Options)).Should().NotBeNull();
 		}
 	}

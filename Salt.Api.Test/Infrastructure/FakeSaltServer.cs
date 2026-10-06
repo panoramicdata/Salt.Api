@@ -55,10 +55,17 @@ internal sealed class FakeSaltServer : HttpMessageHandler
 
 	protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 	{
+		var recorded = await RecordAsync(request, cancellationToken);
+		Requests.Enqueue(recorded);
+		return _routes.Select(route => route(recorded)).FirstOrDefault(response => response is not null) ?? DefaultResponse(recorded);
+	}
+
+	private static async Task<RecordedRequest> RecordAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+	{
 		// Read before the body: a streamed (chunked) content has no length until it is buffered.
 		var contentLength = request.Content?.Headers.ContentLength;
 		var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
-		var recorded = new RecordedRequest(
+		return new RecordedRequest(
 			request.Method,
 			request.RequestUri!.AbsolutePath,
 			body,
@@ -66,33 +73,23 @@ internal sealed class FakeSaltServer : HttpMessageHandler
 			request.Headers.TryGetValues("X-Auth-Token", out var tokens) ? tokens.Single() : null,
 			request.Headers.TryGetValues("User-Agent", out var agents) ? string.Join(' ', agents) : null,
 			contentLength);
-		Requests.Enqueue(recorded);
+	}
 
-		foreach (var route in _routes)
-		{
-			var response = route(recorded);
-			if (response is not null)
-			{
-				return response;
-			}
-		}
-
+	private HttpResponseMessage DefaultResponse(RecordedRequest recorded)
+	{
 		if (recorded.IsLogin)
 		{
 			CurrentToken = $"token-{Interlocked.Increment(ref _tokenNumber)}";
 			return Json(Fixtures.Load("login-ok.json").Replace("<token>", CurrentToken, StringComparison.Ordinal));
 		}
 
-		if (recorded.Token is null || recorded.Token != CurrentToken)
-		{
-			return Html(HttpStatusCode.Unauthorized, "No permission -- see authorization schemes");
-		}
-
-		return Html(HttpStatusCode.NotFound, $"No fake route for {recorded.Method} {recorded.Path}");
+		return recorded.Token is not null && recorded.Token == CurrentToken
+			? Html(HttpStatusCode.NotFound, $"No fake route for {recorded.Method} {recorded.Path}")
+			: Html(HttpStatusCode.Unauthorized, "No permission -- see authorization schemes");
 	}
 
-	public static HttpResponseMessage Json(string json, HttpStatusCode status = HttpStatusCode.OK)
-		=> new(status) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
+	public static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK)
+		=> new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
 
 	public static HttpResponseMessage Html(HttpStatusCode status, string text)
 		=> new(status) { Content = new StringContent($"<html><body>{text}</body></html>", Encoding.UTF8, "text/html") };

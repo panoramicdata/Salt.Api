@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Salt.Api;
@@ -19,6 +20,23 @@ internal sealed partial class SaltAuthenticatingHandler : DelegatingHandler
 {
 	private const string TokenHeader = "X-Auth-Token";
 	private const int MaxErrorTextLength = 300;
+	private const int JitterResolution = 1_000_000;
+
+	private const string NoTokenMessage =
+		"The login returned HTTP 200 without a token. rest_cherrypy answers a failed login like this when it takes the client for a browser.";
+
+	/// <summary>What to do after a failed response.</summary>
+	internal enum RetryAction
+	{
+		/// <summary>Give up and throw.</summary>
+		Fail,
+
+		/// <summary>Log in again, then retry once.</summary>
+		Relogin,
+
+		/// <summary>Wait, then retry.</summary>
+		BackOff,
+	}
 
 	private readonly SaltClientOptions _options;
 	private readonly ILogger _logger;
@@ -63,23 +81,7 @@ internal sealed partial class SaltAuthenticatingHandler : DelegatingHandler
 	protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
 	{
 		var relativePath = GetRelativePath(request.RequestUri);
-		string? body = null;
-		if (request.Content is not null)
-		{
-			// Replace the content with its bytes, so that the body that is checked is exactly the body that is sent, it can
-			// be sent again on a retry, and it has a Content-Length (rest_cherrypy answers a chunked JSON body with HTTP 500).
-			var bytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-			body = Encoding.UTF8.GetString(bytes);
-			var buffered = new ByteArrayContent(bytes);
-			foreach (var header in request.Content.Headers.Where(h => h.Key != "Content-Length"))
-			{
-				buffered.Headers.TryAddWithoutValidation(header.Key, header.Value);
-			}
-
-			request.Content.Dispose();
-			request.Content = buffered;
-		}
-
+		var body = await BufferContentAsync(request, cancellationToken).ConfigureAwait(false);
 		var readOnlyRefusal = ReadOnlyPolicy.CheckRequest(request.Method, relativePath, body);
 		if (_options.ReadOnly && readOnlyRefusal is not null)
 		{
@@ -99,41 +101,80 @@ internal sealed partial class SaltAuthenticatingHandler : DelegatingHandler
 			request.Headers.TryAddWithoutValidation(TokenHeader, token);
 
 			var response = await SendOnceAsync(request, relativePath, attempt, cancellationToken).ConfigureAwait(false);
-			var status = (int)response.StatusCode;
 			if (response.IsSuccessStatusCode)
 			{
 				return response;
 			}
 
+			var status = (int)response.StatusCode;
 			var errorText = await ReadErrorTextAsync(response, cancellationToken).ConfigureAwait(false);
 			response.Dispose();
 
-			switch (status)
+			switch (DecideRetry(status, reloggedIn, isReadOnlySafe, attempt))
 			{
-				case 401 when !reloggedIn:
+				case RetryAction.Relogin:
 					// The session may have been lost (salt-api restarted) or expired: log in again once, then retry once.
 					reloggedIn = true;
 					attempt--;
 					LogRelogin(_logger, request.Method.Method, relativePath);
 					await RefreshTokenAsync(token, cancellationToken).ConfigureAwait(false);
-					continue;
-				case 401:
-					throw new SaltAuthenticationException(
-						$"Salt refused {request.Method} {relativePath} with HTTP 401 after a fresh login: {errorText}");
-				case 429 when attempt < _options.MaxAttemptCount:
+					break;
+				case RetryAction.BackOff:
 					await BackOffAsync(request.Method.Method, relativePath, status, attempt, cancellationToken).ConfigureAwait(false);
-					continue;
-				case 502 or 503 or 504 when isReadOnlySafe && attempt < _options.MaxAttemptCount:
-					await BackOffAsync(request.Method.Method, relativePath, status, attempt, cancellationToken).ConfigureAwait(false);
-					continue;
+					break;
 				default:
-					throw new SaltApiException(
-						$"Salt returned HTTP {status} for {request.Method} {relativePath} on attempt {attempt}: {errorText}",
-						(HttpStatusCode)status,
-						errorText);
+					throw CreateFailure(request.Method, relativePath, status, attempt, errorText);
 			}
 		}
 	}
+
+	/// <summary>
+	/// Replaces the content with its bytes, so that the body that is checked is exactly the body that is sent, it can be
+	/// sent again on a retry, and it has a Content-Length (rest_cherrypy answers a chunked JSON body with HTTP 500).
+	/// </summary>
+	/// <returns>The body as text, or <see langword="null"/> when there is none.</returns>
+	private static async Task<string?> BufferContentAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+	{
+		if (request.Content is null)
+		{
+			return null;
+		}
+
+		var bytes = await request.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+		var buffered = new ByteArrayContent(bytes);
+		foreach (var header in request.Content.Headers.Where(h => h.Key != "Content-Length"))
+		{
+			buffered.Headers.TryAddWithoutValidation(header.Key, header.Value);
+		}
+
+		request.Content.Dispose();
+		request.Content = buffered;
+		return Encoding.UTF8.GetString(bytes);
+	}
+
+	/// <summary>
+	/// What to do after a failed response. A request that could change state (<paramref name="isReadOnlySafe"/> false) is
+	/// retried only on 401 and 429, which mean it was refused before it ran.
+	/// </summary>
+	internal RetryAction DecideRetry(int status, bool reloggedIn, bool isReadOnlySafe, int attempt)
+	{
+		var canRetry = attempt < _options.MaxAttemptCount;
+		return status switch
+		{
+			401 => reloggedIn ? RetryAction.Fail : RetryAction.Relogin,
+			429 => canRetry ? RetryAction.BackOff : RetryAction.Fail,
+			502 or 503 or 504 => canRetry && isReadOnlySafe ? RetryAction.BackOff : RetryAction.Fail,
+			_ => RetryAction.Fail,
+		};
+	}
+
+	private static SaltException CreateFailure(HttpMethod method, string relativePath, int status, int attempt, string errorText)
+		=> status == 401
+			? new SaltAuthenticationException($"Salt refused {method} {relativePath} with HTTP 401 after a fresh login: {errorText}")
+			: new SaltApiException(
+				$"Salt returned HTTP {status} for {method} {relativePath} on attempt {attempt}: {errorText}",
+				(HttpStatusCode)status,
+				errorText);
 
 	protected override void Dispose(bool disposing)
 	{
@@ -250,34 +291,37 @@ internal sealed partial class SaltAuthenticatingHandler : DelegatingHandler
 	/// </summary>
 	internal static (string Token, DateTimeOffset Expire, bool HasPermissions) ParseLogin(string text)
 	{
-		const string noToken = "The login returned HTTP 200 without a token. rest_cherrypy answers a failed login like this when it takes the client for a browser.";
 		try
 		{
 			using var document = JsonDocument.Parse(text);
 			var login = SaltResponseParser.GetReturnElement(document.RootElement, 0);
-			if (login.ValueKind != JsonValueKind.Object
-				|| !login.TryGetProperty("token", out var tokenElement)
-				|| tokenElement.ValueKind != JsonValueKind.String
-				|| string.IsNullOrEmpty(tokenElement.GetString()))
-			{
-				throw new SaltAuthenticationException(noToken);
-			}
-
-			var expire = login.TryGetProperty("expire", out var expireElement) && expireElement.ValueKind == JsonValueKind.Number
-				? DateTimeOffset.FromUnixTimeMilliseconds((long)(expireElement.GetDouble() * 1000))
-				: throw new SaltAuthenticationException("The login response has no 'expire' time.");
-
-			var hasPermissions = login.TryGetProperty("perms", out var perms)
-				&& perms.ValueKind == JsonValueKind.Array
-				&& perms.GetArrayLength() > 0;
-
-			return (tokenElement.GetString()!, expire, hasPermissions);
+			return (ReadToken(login), ReadExpire(login), HasPermissions(login));
 		}
 		catch (Exception ex) when (ex is JsonException or SaltApiException)
 		{
-			throw new SaltAuthenticationException(noToken, ex);
+			throw new SaltAuthenticationException(NoTokenMessage, ex);
 		}
 	}
+
+	private static string ReadToken(JsonElement login)
+	{
+		var token = login.ValueKind == JsonValueKind.Object
+			&& login.TryGetProperty("token", out var tokenElement)
+			&& tokenElement.ValueKind == JsonValueKind.String
+				? tokenElement.GetString()
+				: null;
+		return string.IsNullOrEmpty(token) ? throw new SaltAuthenticationException(NoTokenMessage) : token;
+	}
+
+	private static DateTimeOffset ReadExpire(JsonElement login)
+		=> login.TryGetProperty("expire", out var expire) && expire.ValueKind == JsonValueKind.Number
+			? DateTimeOffset.FromUnixTimeMilliseconds((long)(expire.GetDouble() * 1000))
+			: throw new SaltAuthenticationException("The login response has no 'expire' time.");
+
+	private static bool HasPermissions(JsonElement login)
+		=> login.TryGetProperty("perms", out var perms)
+			&& perms.ValueKind == JsonValueKind.Array
+			&& perms.GetArrayLength() > 0;
 
 	private async Task<HttpResponseMessage> SendOnceAsync(HttpRequestMessage request, string relativePath, int attempt, CancellationToken cancellationToken)
 	{
@@ -299,7 +343,8 @@ internal sealed partial class SaltAuthenticatingHandler : DelegatingHandler
 
 	private async Task BackOffAsync(string method, string relativePath, int status, int attempt, CancellationToken cancellationToken)
 	{
-		var delay = CalculateBackOffDelay(attempt, _options.InitialBackOffDelaySeconds, _options.BackOffDelayFactor, _options.MaxBackOffDelaySeconds, Random.Shared);
+		var jitter = RandomNumberGenerator.GetInt32(JitterResolution) / (double)JitterResolution;
+		var delay = CalculateBackOffDelay(attempt, _options.InitialBackOffDelaySeconds, _options.BackOffDelayFactor, _options.MaxBackOffDelaySeconds, jitter);
 		LogBackOff(_logger, method, relativePath, status, attempt, _options.MaxAttemptCount, delay.TotalSeconds);
 		await _delay(delay, cancellationToken).ConfigureAwait(false);
 	}
@@ -308,11 +353,16 @@ internal sealed partial class SaltAuthenticatingHandler : DelegatingHandler
 	/// The back-off delay: the initial delay grown by the factor for each attempt, capped, plus up to 50% jitter (never above the cap),
 	/// so that clients behind one shared address do not all retry at the same moment.
 	/// </summary>
-	internal static TimeSpan CalculateBackOffDelay(int attempt, double initialSeconds, double factor, int maxSeconds, Random random)
+	/// <param name="attempt">The attempt that failed, from 1.</param>
+	/// <param name="initialSeconds">The first delay.</param>
+	/// <param name="factor">The growth per attempt.</param>
+	/// <param name="maxSeconds">The cap.</param>
+	/// <param name="jitter">A fraction in [0, 1) choosing where in the jitter range the delay falls.</param>
+	internal static TimeSpan CalculateBackOffDelay(int attempt, double initialSeconds, double factor, int maxSeconds, double jitter)
 	{
 		var seconds = Math.Min(initialSeconds * Math.Pow(factor, attempt - 1), maxSeconds);
 		var ceiling = Math.Min(seconds * 1.5, maxSeconds);
-		return TimeSpan.FromSeconds(seconds + (random.NextDouble() * (ceiling - seconds)));
+		return TimeSpan.FromSeconds(seconds + (jitter * (ceiling - seconds)));
 	}
 
 	private void PrepareHeaders(HttpRequestMessage request)

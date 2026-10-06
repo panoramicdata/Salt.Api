@@ -38,6 +38,8 @@ public sealed partial class SaltClient : IDisposable
 {
 	private const int MaxMinionsPerApplyByDefault = 8;
 	private const int RunningJobsToInspect = 20;
+	private const string NoAcceptedKeyText = "The minion did not match an accepted key; nothing ran on it.";
+	private const string DefaultPatchStatusFunction = "patchreport.status";
 
 	private readonly SaltClientOptions _options;
 	private readonly ILogger _logger;
@@ -50,12 +52,22 @@ public sealed partial class SaltClient : IDisposable
 	private readonly Lock _dryRunLock = new();
 
 	/// <summary>
+	/// Creates a client without logging. Certificates are always validated; there is no option to turn that off.
+	/// </summary>
+	/// <param name="options">The options. They are validated and copied: later changes to the object have no effect.</param>
+	/// <exception cref="SaltConfigurationException">The options are not valid.</exception>
+	public SaltClient(SaltClientOptions options)
+		: this(options, null)
+	{
+	}
+
+	/// <summary>
 	/// Creates a client. Certificates are always validated; there is no option to turn that off.
 	/// </summary>
 	/// <param name="options">The options. They are validated and copied: later changes to the object have no effect.</param>
-	/// <param name="logger">An optional logger. Passwords, tokens and bodies are never logged.</param>
+	/// <param name="logger">A logger, or <see langword="null"/>. Passwords, tokens and bodies are never logged.</param>
 	/// <exception cref="SaltConfigurationException">The options are not valid.</exception>
-	public SaltClient(SaltClientOptions options, ILogger? logger = null)
+	public SaltClient(SaltClientOptions options, ILogger? logger)
 		: this(options, logger, new HttpClientHandler { UseCookies = false }, null, null)
 	{
 	}
@@ -98,7 +110,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Runs <c>test.ping</c>. A minion that does not answer <c>true</c> is a failure.
 	/// </summary>
-	public async Task<MinionResultDictionary<bool>> PingAsync(MinionTarget target, CancellationToken cancellationToken = default)
+	public async Task<MinionResultDictionary<bool>> PingAsync(MinionTarget target, CancellationToken cancellationToken)
 	{
 		var lowstate = Lowstate.Ping(target);
 		var element = await RunSingleAsync(lowstate, cancellationToken).ConfigureAwait(false);
@@ -106,12 +118,20 @@ public sealed partial class SaltClient : IDisposable
 	}
 
 	/// <summary>
-	/// Runs <c>patchreport.status</c>: pending upgrades, kept-back and held packages, reboot flags and the last upgrade time.
+	/// Runs the patch status function, <see cref="SaltClientOptions.PatchStatusFunction"/> (by default <c>patchreport.status</c>):
+	/// pending upgrades, kept-back and held packages, reboot flags and the last upgrade time.
 	/// A minion without the module, or that did not return, is a failure, never "nothing pending".
 	/// </summary>
-	public async Task<MinionResultDictionary<PatchStatus>> GetPatchStatusAsync(MinionTarget target, CancellationToken cancellationToken = default)
+	/// <exception cref="SaltReadOnlyViolationException">
+	/// The client is read-only and the configured function is not on the fixed read-only allow-list. Nothing was sent.
+	/// </exception>
+	public async Task<MinionResultDictionary<PatchStatus>> GetPatchStatusAsync(MinionTarget target, CancellationToken cancellationToken)
 	{
-		var element = await RunSingleAsync(Lowstate.PatchStatus(target), cancellationToken).ConfigureAwait(false);
+		ArgumentNullException.ThrowIfNull(target);
+		var lowstate = _options.PatchStatusFunction == DefaultPatchStatusFunction
+			? Lowstate.PatchStatus(target)
+			: Lowstate.LocalFunction(target, _options.PatchStatusFunction);
+		var element = await RunSingleAsync(lowstate, cancellationToken).ConfigureAwait(false);
 		return SaltResponseParser.ParseMinions<PatchStatus>(element, target.MinionIds, stringIsFailure: true, falseIsFailure: true, ConvertObject<PatchStatus>);
 	}
 
@@ -119,7 +139,7 @@ public sealed partial class SaltClient : IDisposable
 	/// Runs <c>grains.get</c> for one grain. The value is returned as JSON because a grain can be any type; a grain that is
 	/// not set returns an empty string. Only a missing minion is reported as a failure, since a string is a valid grain value.
 	/// </summary>
-	public async Task<MinionResultDictionary<JsonElement>> GetGrainAsync(MinionTarget target, string grain, CancellationToken cancellationToken = default)
+	public async Task<MinionResultDictionary<JsonElement>> GetGrainAsync(MinionTarget target, string grain, CancellationToken cancellationToken)
 	{
 		var element = await RunSingleAsync(Lowstate.GrainsGet(target, grain), cancellationToken).ConfigureAwait(false);
 		return SaltResponseParser.ParseMinions<JsonElement>(element, target.MinionIds, stringIsFailure: false, falseIsFailure: false);
@@ -128,7 +148,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Runs the runner <c>manage.up</c>: the ids of the connected minions. This is the cheap way to list minions.
 	/// </summary>
-	public async Task<IReadOnlyList<string>> GetMinionsUpAsync(CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<string>> GetMinionsUpAsync(CancellationToken cancellationToken)
 	{
 		var element = await RunSingleAsync(Lowstate.ManageUp(), cancellationToken).ConfigureAwait(false);
 		return ReadStringArray(element, "manage.up");
@@ -137,7 +157,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Runs the runner <c>manage.status</c>: the minions that are up and down.
 	/// </summary>
-	public async Task<MinionStatus> GetMinionStatusAsync(CancellationToken cancellationToken = default)
+	public async Task<MinionStatus> GetMinionStatusAsync(CancellationToken cancellationToken)
 	{
 		var element = await RunSingleAsync(Lowstate.ManageStatus(), cancellationToken).ConfigureAwait(false);
 		return DeserializeOrThrow<MinionStatus>(element, "manage.status");
@@ -146,7 +166,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Reads every minion key by state (<c>GET /keys</c>).
 	/// </summary>
-	public async Task<SaltKeys> GetKeysAsync(CancellationToken cancellationToken = default)
+	public async Task<SaltKeys> GetKeysAsync(CancellationToken cancellationToken)
 	{
 		var root = await CallAsync(() => _api.GetKeysAsync(cancellationToken)).ConfigureAwait(false);
 		return DeserializeOrThrow<SaltKeys>(SaltResponseParser.GetReturnValue(root), "GET /keys");
@@ -157,7 +177,7 @@ public sealed partial class SaltClient : IDisposable
 	/// There is deliberately no call for every minion's grains, which grows with the estate.
 	/// </summary>
 	/// <exception cref="ArgumentException">The id is not an exact minion id.</exception>
-	public async Task<MinionResult<JsonElement>> GetMinionAsync(string minionId, CancellationToken cancellationToken = default)
+	public async Task<MinionResult<JsonElement>> GetMinionAsync(string minionId, CancellationToken cancellationToken)
 	{
 		MinionTarget.EnsureExactMinionId(minionId, nameof(minionId));
 		var root = await CallAsync(() => _api.GetMinionAsync(minionId, cancellationToken)).ConfigureAwait(false);
@@ -169,7 +189,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Lists recent jobs (<c>GET /jobs</c>), newest first. Note that every job lookup is itself recorded as a job.
 	/// </summary>
-	public async Task<IReadOnlyList<JobSummary>> GetJobsAsync(CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<JobSummary>> GetJobsAsync(CancellationToken cancellationToken)
 	{
 		var root = await CallAsync(() => _api.GetJobsAsync(cancellationToken)).ConfigureAwait(false);
 		return SaltResponseParser.ParseJobList(root);
@@ -178,7 +198,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Reads a job and the returns so far (<c>GET /jobs/{jid}</c>).
 	/// </summary>
-	public async Task<SaltJobResult> GetJobAsync(string jid, CancellationToken cancellationToken = default)
+	public async Task<SaltJobResult> GetJobAsync(string jid, CancellationToken cancellationToken)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(jid);
 		var root = await CallAsync(() => _api.GetJobAsync(jid, cancellationToken)).ConfigureAwait(false);
@@ -190,7 +210,7 @@ public sealed partial class SaltClient : IDisposable
 	/// Use this, with <see cref="WaitForJobAsync"/>, for anything that may take more than a couple of minutes.
 	/// </summary>
 	/// <exception cref="SaltException">The target matched no minion, so nothing was started.</exception>
-	public async Task<SaltJob> SubmitAsync(Lowstate lowstate, CancellationToken cancellationToken = default)
+	public async Task<SaltJob> SubmitAsync(Lowstate lowstate, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(lowstate);
 		return await SubmitCoreAsync(lowstate.AsAsync(), cancellationToken).ConfigureAwait(false)
@@ -204,7 +224,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <param name="timeout">The overall deadline.</param>
 	/// <param name="cancellationToken">A cancellation token.</param>
 	/// <exception cref="SaltJobTimeoutException">The deadline passed; the exception holds the partial result.</exception>
-	public async Task<SaltJobResult> WaitForJobAsync(SaltJob job, TimeSpan timeout, CancellationToken cancellationToken = default)
+	public async Task<SaltJobResult> WaitForJobAsync(SaltJob job, TimeSpan timeout, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(job);
 		var (result, complete) = await PollJobAsync(job, timeout, cancellationToken).ConfigureAwait(false);
@@ -216,13 +236,15 @@ public sealed partial class SaltClient : IDisposable
 	}
 
 	/// <summary>
-	/// Runs a patch dry run: <c>state.apply patch.apply</c> with <c>test=True</c>, as an async job, and waits for it.
+	/// Runs a patch dry run: <c>state.apply</c> of <see cref="SaltClientOptions.PatchStateName"/> (by default <c>patch.apply</c>)
+	/// with <c>test=True</c>, as an async job, and waits for it.
 	/// </summary>
 	/// <remarks>
 	/// <para>Not permitted in read-only mode: a dry run refreshes apt and takes the apt lock on each minion.</para>
 	/// <para>
 	/// A state that would change something has <see cref="StateResult.Result"/> <see langword="null"/>.
-	/// <see cref="PatchStateRun.PackageChanges"/> lists the packages that would be upgraded. The dry run is not an exact
+	/// <see cref="PatchStateRun.PackageChanges"/> lists the packages that would be upgraded, read from the <c>pkg</c> state whose
+	/// id is <see cref="SaltClientOptions.PackageStateId"/>. The dry run is not an exact
 	/// preview: it can list kept-back packages that the real apply will not install, so treat it as the larger set.
 	/// </para>
 	/// <para>
@@ -231,7 +253,7 @@ public sealed partial class SaltClient : IDisposable
 	/// </para>
 	/// </remarks>
 	/// <exception cref="SaltReadOnlyViolationException">The client is read-only. Nothing was sent.</exception>
-	public async Task<PatchRunResult> PatchDryRunAsync(PatchDryRunRequest request, CancellationToken cancellationToken = default)
+	public async Task<PatchRunResult> PatchDryRunAsync(PatchDryRunRequest request, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(request);
 		ArgumentNullException.ThrowIfNull(request.Target);
@@ -247,7 +269,8 @@ public sealed partial class SaltClient : IDisposable
 	}
 
 	/// <summary>
-	/// Runs a REAL patch apply: <c>state.apply patch.apply</c>, which installs packages as root, as an async job, and waits for it.
+	/// Runs a REAL patch apply: <c>state.apply</c> of <see cref="SaltClientOptions.PatchStateName"/> (by default <c>patch.apply</c>),
+	/// which installs packages as root, as an async job, and waits for it.
 	/// </summary>
 	/// <remarks>
 	/// <para>
@@ -264,7 +287,7 @@ public sealed partial class SaltClient : IDisposable
 	/// </remarks>
 	/// <exception cref="SaltReadOnlyViolationException">The client is read-only. Nothing was sent.</exception>
 	/// <exception cref="SaltPatchGuardException">A guard refused the apply. No apply was sent.</exception>
-	public async Task<PatchRunResult> PatchApplyAsync(PatchApplyRequest request, CancellationToken cancellationToken = default)
+	public async Task<PatchRunResult> PatchApplyAsync(PatchApplyRequest request, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(request);
 		if (_options.ReadOnly)
@@ -291,7 +314,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Runs one lowstate and returns its <c>return</c> element as <typeparamref name="T"/>. Subject to read-only mode.
 	/// </summary>
-	public async Task<T> ExecuteAsync<T>(Lowstate lowstate, CancellationToken cancellationToken = default)
+	public async Task<T> ExecuteAsync<T>(Lowstate lowstate, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(lowstate);
 		var element = await RunSingleAsync(lowstate, cancellationToken).ConfigureAwait(false);
@@ -303,7 +326,7 @@ public sealed partial class SaltClient : IDisposable
 	/// A string is a failure unless <typeparamref name="T"/> is <see cref="string"/> or <see cref="JsonElement"/>;
 	/// <c>false</c> is a failure unless it is <see cref="bool"/> or <see cref="JsonElement"/>.
 	/// </summary>
-	public async Task<MinionResultDictionary<T>> ExecuteOnMinionsAsync<T>(Lowstate lowstate, CancellationToken cancellationToken = default)
+	public async Task<MinionResultDictionary<T>> ExecuteOnMinionsAsync<T>(Lowstate lowstate, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(lowstate);
 		var element = await RunSingleAsync(lowstate, cancellationToken).ConfigureAwait(false);
@@ -318,7 +341,7 @@ public sealed partial class SaltClient : IDisposable
 	/// Runs several lowstates in one request and returns each <c>return</c> element in order. Subject to read-only mode:
 	/// one refused lowstate refuses the whole request.
 	/// </summary>
-	public async Task<IReadOnlyList<JsonElement>> ExecuteAsync(IReadOnlyList<Lowstate> lowstates, CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<JsonElement>> ExecuteAsync(IReadOnlyList<Lowstate> lowstates, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(lowstates);
 		var root = await RunAsync(lowstates, cancellationToken).ConfigureAwait(false);
@@ -328,7 +351,7 @@ public sealed partial class SaltClient : IDisposable
 	/// <summary>
 	/// Logs out (<c>POST /logout</c>), if logged in. The token is then refused by Salt; the next call logs in again.
 	/// </summary>
-	public async Task LogoutAsync(CancellationToken cancellationToken = default)
+	public async Task LogoutAsync(CancellationToken cancellationToken)
 	{
 		if (!_handler.HasToken)
 		{
@@ -405,45 +428,23 @@ public sealed partial class SaltClient : IDisposable
 			throw new ArgumentOutOfRangeException(nameof(timeout), "The timeout must be positive.");
 		}
 
-		var job = await SubmitCoreAsync(Lowstate.PatchStateApply(target, test), cancellationToken).ConfigureAwait(false);
+		var job = await SubmitCoreAsync(Lowstate.PatchStateApply(target, _options.PatchStateName, test), cancellationToken).ConfigureAwait(false);
 		if (job is null)
 		{
 			return new PatchRunResult
 			{
 				IsDryRun = test,
 				Minions = new MinionResultDictionary<PatchStateRun>(
-					(target.MinionIds ?? []).Select(id => MinionResult.Failure<PatchStateRun>(
-						id,
-						MinionFailureKind.NotReturned,
-						"The minion did not match an accepted key; nothing ran on it.")),
+					(target.MinionIds ?? []).Select(id => MinionResult.Failure<PatchStateRun>(id, MinionFailureKind.NotReturned, NoAcceptedKeyText)),
 					noMinionsMatched: true),
 			};
 		}
 
 		var (result, complete) = await PollJobAsync(job, timeout, cancellationToken).ConfigureAwait(false);
-		var results = new List<MinionResult<PatchStateRun>>();
-		foreach (var minionId in job.Minions.Union(target.MinionIds ?? [], StringComparer.Ordinal))
-		{
-			if (!result.Returns.TryGetValue(minionId, out var minionReturn))
-			{
-				results.Add(MinionResult.Failure<PatchStateRun>(
-					minionId,
-					MinionFailureKind.NotReturned,
-					job.Minions.Contains(minionId, StringComparer.Ordinal)
-						? $"The minion did not return before the deadline; job {job.Jid} may still be running on it."
-						: "The minion did not match an accepted key; nothing ran on it."));
-				continue;
-			}
-
-			try
-			{
-				results.Add(MinionResult.Success(minionId, SaltResponseParser.ParseStateRun(minionReturn)));
-			}
-			catch (FormatException ex)
-			{
-				results.Add(MinionResult.Failure<PatchStateRun>(minionId, MinionFailureKind.StringResponse, ex.Message));
-			}
-		}
+		var results = job.Minions
+			.Union(target.MinionIds ?? [], StringComparer.Ordinal)
+			.Select(minionId => ToPatchMinionResult(minionId, job, result))
+			.ToList();
 
 		return new PatchRunResult
 		{
@@ -452,6 +453,26 @@ public sealed partial class SaltClient : IDisposable
 			TimedOut = !complete,
 			Minions = new MinionResultDictionary<PatchStateRun>(results, noMinionsMatched: false),
 		};
+	}
+
+	private MinionResult<PatchStateRun> ToPatchMinionResult(string minionId, SaltJob job, SaltJobResult result)
+	{
+		if (!result.Returns.TryGetValue(minionId, out var minionReturn))
+		{
+			var text = job.Minions.Contains(minionId, StringComparer.Ordinal)
+				? $"The minion did not return before the deadline; job {job.Jid} may still be running on it."
+				: NoAcceptedKeyText;
+			return MinionResult.Failure<PatchStateRun>(minionId, MinionFailureKind.NotReturned, text);
+		}
+
+		try
+		{
+			return MinionResult.Success(minionId, SaltResponseParser.ParseStateRun(minionReturn, _options.PackageStateId));
+		}
+		catch (FormatException ex)
+		{
+			return MinionResult.Failure<PatchStateRun>(minionId, MinionFailureKind.StringResponse, ex.Message);
+		}
 	}
 
 	private void RecordDryRun(PatchRunResult result)
@@ -475,55 +496,49 @@ public sealed partial class SaltClient : IDisposable
 
 	private MinionTarget ValidateApplyRequest(PatchApplyRequest request)
 	{
-		if (!request.ConfirmRealApply)
-		{
-			throw new SaltPatchGuardException($"A real apply needs {nameof(PatchApplyRequest.ConfirmRealApply)} = true.");
-		}
-
-		if (string.IsNullOrWhiteSpace(request.ChangeReference))
-		{
-			throw new SaltPatchGuardException($"A real apply needs a {nameof(PatchApplyRequest.ChangeReference)}.");
-		}
-
-		if (request.MinionIds is null || request.MinionIds.Count == 0)
-		{
-			throw new SaltPatchGuardException("A real apply needs at least one exact minion id.");
-		}
+		RequireForApply(request.ConfirmRealApply, $"A real apply needs {nameof(PatchApplyRequest.ConfirmRealApply)} = true.");
+		RequireForApply(!string.IsNullOrWhiteSpace(request.ChangeReference), $"A real apply needs a {nameof(PatchApplyRequest.ChangeReference)}.");
+		RequireForApply(request.MinionIds is { Count: > 0 }, "A real apply needs at least one exact minion id.");
 
 		var invalid = request.MinionIds.Where(id => !MinionTarget.IsExactMinionId(id)).ToList();
-		if (invalid.Count > 0)
-		{
-			throw new SaltPatchGuardException($"A real apply takes exact minion ids only, not: {string.Join(", ", invalid.Select(i => $"'{i}'"))}.");
-		}
+		RequireForApply(invalid.Count == 0, $"A real apply takes exact minion ids only, not: {string.Join(", ", invalid.Select(i => $"'{i}'"))}.");
 
 		var target = MinionTarget.List(request.MinionIds);
-		if (target.MinionIds!.Count > MaxMinionsPerApplyByDefault && !request.AllowMoreThanEightMinions)
-		{
-			throw new SaltPatchGuardException(
-				$"A real apply on {target.MinionIds.Count} minions needs {nameof(PatchApplyRequest.AllowMoreThanEightMinions)} = true.");
-		}
+		var count = target.MinionIds!.Count;
+		RequireForApply(
+			count <= MaxMinionsPerApplyByDefault || request.AllowMoreThanEightMinions,
+			$"A real apply on {count} minions needs {nameof(PatchApplyRequest.AllowMoreThanEightMinions)} = true.");
 
-		var validFrom = _timeProvider.GetUtcNow() - TimeSpan.FromMinutes(_options.DryRunValidityMinutes);
-		List<string> withoutDryRun;
-		lock (_dryRunLock)
-		{
-			withoutDryRun = [.. target.MinionIds.Where(id => !_successfulDryRuns.TryGetValue(id, out var at) || at < validFrom)];
-		}
-
-		if (withoutDryRun.Count > 0)
-		{
-			throw new SaltPatchGuardException(
-				$"A real apply needs a successful dry run by this client within the last {_options.DryRunValidityMinutes} minutes, with no failed state, for: {string.Join(", ", withoutDryRun)}.");
-		}
+		var withoutDryRun = GetMinionsWithoutRecentDryRun(target.MinionIds);
+		RequireForApply(
+			withoutDryRun.Count == 0,
+			$"A real apply needs a successful dry run by this client within the last {_options.DryRunValidityMinutes} minutes, with no failed state, for: {string.Join(", ", withoutDryRun)}.");
 
 		return target;
+	}
+
+	private List<string> GetMinionsWithoutRecentDryRun(IReadOnlyList<string> minionIds)
+	{
+		var validFrom = _timeProvider.GetUtcNow() - TimeSpan.FromMinutes(_options.DryRunValidityMinutes);
+		lock (_dryRunLock)
+		{
+			return [.. minionIds.Where(id => !_successfulDryRuns.TryGetValue(id, out var at) || at < validFrom)];
+		}
+	}
+
+	private static void RequireForApply(bool isSatisfied, string message)
+	{
+		if (!isSatisfied)
+		{
+			throw new SaltPatchGuardException(message);
+		}
 	}
 
 	private async Task EnsureNoPatchRunningAsync(IReadOnlyList<string> minionIds, CancellationToken cancellationToken)
 	{
 		var jobs = await GetJobsAsync(cancellationToken).ConfigureAwait(false);
 		var patchJobs = jobs
-			.Where(j => j.Function == "state.apply" && j.HasArgument("patch.apply"))
+			.Where(j => j.Function == "state.apply" && j.HasArgument(_options.PatchStateName))
 			.Take(RunningJobsToInspect);
 
 		foreach (var job in patchJobs)
@@ -533,7 +548,7 @@ public sealed partial class SaltClient : IDisposable
 			if (busy.Count > 0)
 			{
 				throw new SaltPatchGuardException(
-					$"A patch run (job {job.Jid}) has not returned yet on: {string.Join(", ", busy)}. Two runs on one minion contend for the apt lock.");
+					$"A patch run of {_options.PatchStateName} (job {job.Jid}) has not returned yet on: {string.Join(", ", busy)}. Two runs on one minion contend for the apt lock.");
 			}
 		}
 	}
