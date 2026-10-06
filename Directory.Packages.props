@@ -7,7 +7,7 @@
 		<!-- Salt.Api -->
 		<PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
 		<PackageVersion Include="Nerdbank.GitVersioning" Version="3.10.85" />
-		<PackageVersion Include="Refit" Version="15.2.0" />
+		<PackageVersion Include="Refit" Version="16.3.0" />
 		<!-- Test projects -->
 		<PackageVersion Include="AwesomeAssertions" Version="9.4.0" />
 		<PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
