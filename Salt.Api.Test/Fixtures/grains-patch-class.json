@@ -1,0 +1,12 @@
+{
+  "return": [
+    {
+      "node-05": "k8s_node",
+      "vm-02": "pvg",
+      "node-03": "k8s_node",
+      "vm-01": "pvg",
+      "node-04": "k8s_node",
+      "node-06": "k8s_node"
+    }
+  ]
+}

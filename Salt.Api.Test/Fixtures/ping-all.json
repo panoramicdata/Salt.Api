@@ -1,0 +1,12 @@
+{
+  "return": [
+    {
+      "vm-02": true,
+      "node-05": true,
+      "node-03": true,
+      "node-04": true,
+      "node-06": true,
+      "vm-01": true
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "return": [
+    {
+      "node-05": {
+        "id": "node-05",
+        "os": "Ubuntu",
+        "osrelease": "22.04",
+        "patch_class": "k8s_node"
+      },
+      "node-04": {
+        "id": "node-04",
+        "os": "Ubuntu",
+        "osrelease": "22.04",
+        "patch_class": "k8s_node"
+      },
+      "node-03": {
+        "id": "node-03",
+        "os": "Ubuntu",
+        "osrelease": "22.04",
+        "patch_class": "k8s_node"
+      },
+      "vm-01": {
+        "id": "vm-01",
+        "os": "Ubuntu",
+        "osrelease": "22.04",
+        "patch_class": "pvg"
+      },
+      "vm-02": {
+        "id": "vm-02",
+        "os": "Ubuntu",
+        "osrelease": "22.04",
+        "patch_class": "pvg"
+      },
+      "node-06": {
+        "id": "node-06",
+        "os": "Ubuntu",
+        "osrelease": "22.04",
+        "patch_class": "k8s_node"
+      }
+    }
+  ]
+}

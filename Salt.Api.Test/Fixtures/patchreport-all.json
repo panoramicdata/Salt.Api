@@ -1,0 +1,86 @@
+{
+  "return": [
+    {
+      "node-05": {
+        "pending_upgrades": {},
+        "pending_count": 0,
+        "kept_back": [
+          "dnsmasq-base"
+        ],
+        "kernelpkg_needs_reboot": false,
+        "reboot_required_file": false,
+        "held": [],
+        "last_upgrade_epoch": 1791267120,
+        "last_upgrade_source": "/var/log/dpkg.log"
+      },
+      "node-03": {
+        "pending_upgrades": {},
+        "pending_count": 0,
+        "kept_back": [],
+        "kernelpkg_needs_reboot": false,
+        "reboot_required_file": false,
+        "held": [],
+        "last_upgrade_epoch": 1791269261,
+        "last_upgrade_source": "/var/log/dpkg.log"
+      },
+      "vm-01": {
+        "pending_upgrades": {},
+        "pending_count": 0,
+        "kept_back": [],
+        "kernelpkg_needs_reboot": true,
+        "reboot_required_file": true,
+        "held": [
+          "salt-common",
+          "salt-minion"
+        ],
+        "last_upgrade_epoch": 1791267565,
+        "last_upgrade_source": "/var/log/dpkg.log"
+      },
+      "node-06": {
+        "pending_upgrades": {
+          "sosreport": "4.11.2-0ubuntu0~22.04.1"
+        },
+        "pending_count": 1,
+        "kept_back": [
+          "dnsmasq-base"
+        ],
+        "kernelpkg_needs_reboot": false,
+        "reboot_required_file": false,
+        "held": [],
+        "last_upgrade_epoch": 1791267791,
+        "last_upgrade_source": "/var/log/dpkg.log"
+      },
+      "vm-02": {
+        "pending_upgrades": {
+          "libunbound8": "1.13.1-1ubuntu5.16"
+        },
+        "pending_count": 1,
+        "kept_back": [],
+        "kernelpkg_needs_reboot": true,
+        "reboot_required_file": true,
+        "held": [
+          "salt-common",
+          "salt-minion"
+        ],
+        "last_upgrade_epoch": 1791266641,
+        "last_upgrade_source": "/var/log/dpkg.log"
+      },
+      "node-04": {
+        "pending_upgrades": {
+          "libsgutils2-2": "1.46-1ubuntu0.22.04.2",
+          "sg3-utils": "1.46-1ubuntu0.22.04.2",
+          "sg3-utils-udev": "1.46-1ubuntu0.22.04.2"
+        },
+        "pending_count": 3,
+        "kept_back": [
+          "dnsmasq-base"
+        ],
+        "kernelpkg_needs_reboot": false,
+        "reboot_required_file": false,
+        "held": [],
+        "last_upgrade_epoch": 1791267542,
+        "last_upgrade_source": "/var/log/dpkg.log"
+      }
+    }
+  ]
+}

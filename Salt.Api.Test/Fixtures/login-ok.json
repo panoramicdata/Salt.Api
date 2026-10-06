@@ -1,0 +1,17 @@
+{
+  "return": [
+    {
+      "token": "<token>",
+      "expire": 1791325999.3012981,
+      "start": 1791297199.3012938,
+      "user": "api-user",
+      "eauth": "file",
+      "perms": [
+        ".*",
+        "@jobs",
+        "@runner",
+        "@wheel"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<NeutralResourcesLanguage>en</NeutralResourcesLanguage>
+		<!-- RF006: Refit's source generator falls back to the reflection request builder for some
+		     signatures. SaltClient creates its client with RestService.For<T>(), which the diagnostic
+		     permits; this library is not trimmed or AOT-published. -->
+		<NoWarn>$(NoWarn);RF006</NoWarn>
+
+		<PackageId>Salt.Api</PackageId>
+		<Owners>Panoramic Data Limited</Owners>
+		<PackageProjectUrl>https://github.com/panoramicdata/Salt.Api</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/panoramicdata/Salt.Api</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageIcon>Icon.png</PackageIcon>
+		<Description>A typed, read-only-by-option .NET client for the Salt Project REST API (rest_cherrypy): ping, patch status, keys, jobs and guarded patch dry runs and applies.</Description>
+		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+		<IncludeSymbols>true</IncludeSymbols>
+		<SymbolPackageFormat>snupkg</SymbolPackageFormat>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageTags>Salt;SaltStack;SaltProject;rest_cherrypy;Patching;PanoramicData</PackageTags>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+		<PackageReference Include="Nerdbank.GitVersioning" PrivateAssets="all" />
+		<PackageReference Include="Refit" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Include="Icon.png" Pack="true" PackagePath="" />
+		<None Include="..\README.md" Link="README.md" Pack="true" PackagePath="" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="Salt.Api.Test" />
+	</ItemGroup>
+
+</Project>
