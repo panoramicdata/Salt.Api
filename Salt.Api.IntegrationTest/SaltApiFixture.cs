@@ -12,9 +12,9 @@ namespace Salt.Api.IntegrationTest;
 /// </remarks>
 public sealed class SaltApiFixture : IAsyncDisposable
 {
-	public const string BaseUrlVariable = "SALT_API_BASE_URL";
-	public const string UsernameVariable = "SALT_API_USERNAME";
-	public const string PasswordVariable = "SALT_API_PASSWORD";
+	private const string BaseUrlVariable = "SALT_API_BASE_URL";
+	private const string UsernameVariable = "SALT_API_USERNAME";
+	private const string PasswordVariable = "SALT_API_PASSWORD";
 
 	private readonly Lazy<SaltClient> _readOnlyClient;
 	private readonly Lazy<SaltClient> _dryRunClient;

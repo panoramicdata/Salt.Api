@@ -260,19 +260,5 @@ public class PatchContentOptionsTests
 		Action<SaltClientOptions>? configure = null,
 		string? dryRunResult = null,
 		string? jobsList = null)
-	{
-		var context = new SaltTestContext(configure);
-		var applyResult = (dryRunResult ?? Fixtures.Load("dryrun-job-result.json"))
-			.Replace(DryRunJid, ApplyJid, StringComparison.Ordinal)
-			.Replace("\"result\": null", "\"result\": true", StringComparison.Ordinal);
-		context.Server
-			.On(r => r.IsRun && r.Body!.Contains("\"test\":true", StringComparison.Ordinal) ? FakeSaltServer.Json(Fixtures.Load("dryrun-async-submit.json")) : null)
-			.On(r => r.IsRun && r.Body!.Contains("state.apply", StringComparison.Ordinal)
-				? FakeSaltServer.Json($$$$"""{"return":[{"jid":"{{{{ApplyJid}}}}","minions":["vm-01"]}]}""")
-				: null)
-			.On(r => r.Path == $"/jobs/{DryRunJid}" ? FakeSaltServer.Json(dryRunResult ?? Fixtures.Load("dryrun-job-result.json")) : null)
-			.On(r => r.Path == $"/jobs/{ApplyJid}" ? FakeSaltServer.Json(applyResult) : null)
-			.On(r => r.Path == "/jobs" ? FakeSaltServer.Json(jobsList ?? """{"return":[{}]}""") : null);
-		return context;
-	}
+		=> PatchScenario.Create(configure, dryRunResult, jobsList);
 }

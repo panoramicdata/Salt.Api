@@ -8,7 +8,7 @@ namespace Salt.Api.Test.Infrastructure;
 /// </summary>
 internal static class Fixtures
 {
-	public static string Load(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", name));
+	public static string Load(string name) => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", Path.GetFileName(name)));
 }
 
 /// <summary>

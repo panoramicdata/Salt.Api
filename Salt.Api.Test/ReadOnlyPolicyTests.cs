@@ -164,6 +164,7 @@ public class ReadOnlyPolicyTests
 			{
 				var t when t == typeof(MinionTarget) => (object?)MinionTarget.List("vm-01"),
 				var t when t == typeof(string) => "patch_class",
+				var t when t == typeof(int) => 60,
 				_ => null,
 			}).ToArray();
 

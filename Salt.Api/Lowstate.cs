@@ -5,9 +5,9 @@ namespace Salt.Api;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Lowstates are built only through the static factories. Every public factory except <see cref="Raw"/> produces a
+/// Lowstates are built only through the static factories. Every public factory except <see cref="Raw(string, string)"/> produces a
 /// call on the read-only allow-list, so code that uses only those factories cannot build a forbidden call.
-/// <see cref="Raw"/> can build anything, and needs <see cref="SaltClientOptions.AllowRawLowstate"/>; in read-only
+/// <see cref="Raw(string, string)"/> can build anything, and needs <see cref="SaltClientOptions.AllowRawLowstate"/>; in read-only
 /// mode the result is still checked against the allow-list before anything is sent.
 /// </para>
 /// <para>
@@ -21,8 +21,6 @@ public sealed class Lowstate
 		string client,
 		string function,
 		MinionTarget? target,
-		string? targetExpression,
-		string? targetType,
 		IReadOnlyList<object?>? arguments,
 		IReadOnlyDictionary<string, object?>? keywordArguments,
 		int? timeout,
@@ -31,8 +29,8 @@ public sealed class Lowstate
 		Client = client;
 		Function = function;
 		MinionTarget = target;
-		Target = target?.Expression ?? targetExpression;
-		TargetType = target?.TargetType ?? targetType;
+		Target = target?.Expression;
+		TargetType = target?.TargetType;
 		Arguments = arguments;
 		KeywordArguments = keywordArguments;
 		Timeout = timeout;
@@ -83,7 +81,7 @@ public sealed class Lowstate
 	public int? Timeout { get; }
 
 	/// <summary>
-	/// Whether this lowstate was built with <see cref="Raw"/>.
+	/// Whether this lowstate was built with <see cref="Raw(string, string)"/>.
 	/// </summary>
 	[JsonIgnore]
 	public bool IsRaw { get; }
@@ -97,59 +95,101 @@ public sealed class Lowstate
 	/// <summary>
 	/// <c>test.ping</c>: whether each minion answers.
 	/// </summary>
-	public static Lowstate Ping(MinionTarget target, int? timeoutSeconds = null)
+	public static Lowstate Ping(MinionTarget target)
+		=> Local(target, "test.ping", null, null, null);
+
+	/// <summary>
+	/// <c>test.ping</c>, with the time the master waits for minions.
+	/// </summary>
+	public static Lowstate Ping(MinionTarget target, int timeoutSeconds)
 		=> Local(target, "test.ping", null, null, timeoutSeconds);
 
 	/// <summary>
 	/// <c>patchreport.status</c>: the read-only patch report for each minion. This always builds the default function;
 	/// <see cref="SaltClient.GetPatchStatusAsync"/> calls <see cref="SaltClientOptions.PatchStatusFunction"/> instead.
 	/// </summary>
-	public static Lowstate PatchStatus(MinionTarget target, int? timeoutSeconds = null)
+	public static Lowstate PatchStatus(MinionTarget target)
+		=> Local(target, "patchreport.status", null, null, null);
+
+	/// <summary>
+	/// <c>patchreport.status</c>, with the time the master waits for minions.
+	/// </summary>
+	public static Lowstate PatchStatus(MinionTarget target, int timeoutSeconds)
 		=> Local(target, "patchreport.status", null, null, timeoutSeconds);
 
 	/// <summary>
 	/// <c>pkg.list_upgrades</c> with <c>refresh=False</c>: upgrades from the apt lists as they stand. It never runs <c>apt-get update</c>.
 	/// </summary>
-	public static Lowstate ListUpgrades(MinionTarget target, int? timeoutSeconds = null)
-		=> Local(target, "pkg.list_upgrades", null, new Dictionary<string, object?> { ["refresh"] = false }, timeoutSeconds);
+	public static Lowstate ListUpgrades(MinionTarget target)
+		=> Local(target, "pkg.list_upgrades", null, NoRefresh(), null);
+
+	/// <summary>
+	/// <c>pkg.list_upgrades</c> with <c>refresh=False</c>, with the time the master waits for minions.
+	/// </summary>
+	public static Lowstate ListUpgrades(MinionTarget target, int timeoutSeconds)
+		=> Local(target, "pkg.list_upgrades", null, NoRefresh(), timeoutSeconds);
 
 	/// <summary>
 	/// <c>grains.get</c>: one grain from each minion.
 	/// </summary>
 	/// <exception cref="ArgumentException">The grain name is empty or contains '='.</exception>
-	public static Lowstate GrainsGet(MinionTarget target, string grain, int? timeoutSeconds = null)
-	{
-		if (string.IsNullOrWhiteSpace(grain) || grain.Contains('=', StringComparison.Ordinal))
-		{
-			throw new ArgumentException("A grain name must be non-empty and must not contain '='.", nameof(grain));
-		}
-
-		return Local(target, "grains.get", [grain], null, timeoutSeconds);
-	}
+	public static Lowstate GrainsGet(MinionTarget target, string grain)
+		=> Local(target, "grains.get", [ValidGrainName(grain)], null, null);
 
 	/// <summary>
-	/// <c>grains.items</c>: every grain of each minion (several kilobytes per minion; prefer <see cref="GrainsGet"/>).
+	/// <c>grains.get</c>, with the time the master waits for minions.
 	/// </summary>
-	public static Lowstate GrainsItems(MinionTarget target, int? timeoutSeconds = null)
+	/// <exception cref="ArgumentException">The grain name is empty or contains '='.</exception>
+	public static Lowstate GrainsGet(MinionTarget target, string grain, int timeoutSeconds)
+		=> Local(target, "grains.get", [ValidGrainName(grain)], null, timeoutSeconds);
+
+	/// <summary>
+	/// <c>grains.items</c>: every grain of each minion (several kilobytes per minion; prefer <see cref="GrainsGet(MinionTarget, string)"/>).
+	/// </summary>
+	public static Lowstate GrainsItems(MinionTarget target)
+		=> Local(target, "grains.items", null, null, null);
+
+	/// <summary>
+	/// <c>grains.items</c>, with the time the master waits for minions.
+	/// </summary>
+	public static Lowstate GrainsItems(MinionTarget target, int timeoutSeconds)
 		=> Local(target, "grains.items", null, null, timeoutSeconds);
 
 	/// <summary>
 	/// The runner <c>manage.up</c>: the ids of the minions that are connected.
 	/// </summary>
 	public static Lowstate ManageUp()
-		=> new("runner", "manage.up", null, null, null, null, null, null, false);
+		=> new("runner", "manage.up", null, null, null, null, false);
 
 	/// <summary>
 	/// The runner <c>manage.status</c>: the ids of the minions that are up and down.
 	/// </summary>
 	public static Lowstate ManageStatus()
-		=> new("runner", "manage.status", null, null, null, null, null, null, false);
+		=> new("runner", "manage.status", null, null, null, null, false);
 
 	/// <summary>
 	/// The wheel <c>key.list_all</c>: every minion key by state.
 	/// </summary>
 	public static Lowstate KeyListAll()
-		=> new("wheel", "key.list_all", null, null, null, null, null, null, false);
+		=> new("wheel", "key.list_all", null, null, null, null, false);
+
+	/// <summary>
+	/// Any lowstate with no target or arguments. See <see cref="Raw(string, string, MinionTarget?, IReadOnlyList{object?}?, IReadOnlyDictionary{string, object?}?, int?)"/>.
+	/// </summary>
+	public static Lowstate Raw(string client, string function)
+		=> Raw(client, function, null, null, null, null);
+
+	/// <summary>
+	/// Any lowstate with a target and no arguments. See <see cref="Raw(string, string, MinionTarget?, IReadOnlyList{object?}?, IReadOnlyDictionary{string, object?}?, int?)"/>.
+	/// </summary>
+	public static Lowstate Raw(string client, string function, MinionTarget? target)
+		=> Raw(client, function, target, null, null, null);
+
+	/// <summary>
+	/// Any lowstate with a target and positional arguments. See <see cref="Raw(string, string, MinionTarget?, IReadOnlyList{object?}?, IReadOnlyDictionary{string, object?}?, int?)"/>.
+	/// </summary>
+	public static Lowstate Raw(string client, string function, MinionTarget? target, IReadOnlyList<object?>? arguments)
+		=> Raw(client, function, target, arguments, null, null);
 
 	/// <summary>
 	/// Any lowstate. Needs <see cref="SaltClientOptions.AllowRawLowstate"/>. This bypasses the patch apply guards
@@ -164,14 +204,14 @@ public sealed class Lowstate
 	public static Lowstate Raw(
 		string client,
 		string function,
-		MinionTarget? target = null,
-		IReadOnlyList<object?>? arguments = null,
-		IReadOnlyDictionary<string, object?>? keywordArguments = null,
-		int? timeoutSeconds = null)
+		MinionTarget? target,
+		IReadOnlyList<object?>? arguments,
+		IReadOnlyDictionary<string, object?>? keywordArguments,
+		int? timeoutSeconds)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(client);
 		ArgumentException.ThrowIfNullOrWhiteSpace(function);
-		return new(client, function, target, null, null, arguments, keywordArguments, timeoutSeconds, true);
+		return new(client, function, target, arguments, keywordArguments, timeoutSeconds, true);
 	}
 
 	/// <summary>
@@ -188,8 +228,6 @@ public sealed class Lowstate
 			"local_async",
 			"state.apply",
 			target,
-			null,
-			null,
 			[stateName],
 			test ? new Dictionary<string, object?> { ["test"] = true } : null,
 			null,
@@ -202,10 +240,10 @@ public sealed class Lowstate
 	/// <see cref="SaltClientOptions.AllowRawLowstate"/>, but in read-only mode it is still checked against the fixed
 	/// allow-list, so a function that is not on it is refused before anything is sent.
 	/// </summary>
-	internal static Lowstate LocalFunction(MinionTarget target, string function, int? timeoutSeconds = null)
+	internal static Lowstate LocalFunction(MinionTarget target, string function)
 	{
 		ArgumentException.ThrowIfNullOrWhiteSpace(function);
-		return Local(target, function, null, null, timeoutSeconds);
+		return Local(target, function, null, null, null);
 	}
 
 	/// <summary>
@@ -215,13 +253,13 @@ public sealed class Lowstate
 		=> Client switch
 		{
 			"local_async" => this,
-			"local" => new("local_async", Function, MinionTarget, Target, TargetType, Arguments, KeywordArguments, null, IsRaw),
+			"local" => new("local_async", Function, MinionTarget, Arguments, KeywordArguments, null, IsRaw),
 			_ => throw new InvalidOperationException($"Only a 'local' lowstate can be submitted as a job; this one uses '{Client}'."),
 		};
 
 	internal Lowstate WithDefaultTimeout(int timeoutSeconds)
 		=> Client == "local" && Timeout is null
-			? new(Client, Function, MinionTarget, Target, TargetType, Arguments, KeywordArguments, timeoutSeconds, IsRaw)
+			? new(Client, Function, MinionTarget, Arguments, KeywordArguments, timeoutSeconds, IsRaw)
 			: this;
 
 	private static Lowstate Local(
@@ -237,8 +275,15 @@ public sealed class Lowstate
 			throw new ArgumentOutOfRangeException(nameof(timeoutSeconds), "The timeout must be greater than zero.");
 		}
 
-		return new("local", function, target, null, null, arguments, keywordArguments, timeoutSeconds, false);
+		return new("local", function, target, arguments, keywordArguments, timeoutSeconds, false);
 	}
+
+	private static Dictionary<string, object?> NoRefresh() => new() { ["refresh"] = false };
+
+	private static string ValidGrainName(string grain)
+		=> string.IsNullOrWhiteSpace(grain) || grain.Contains('=', StringComparison.Ordinal)
+			? throw new ArgumentException("A grain name must be non-empty and must not contain '='.", nameof(grain))
+			: grain;
 
 	/// <inheritdoc/>
 	public override string ToString() => $"{Client} {Function}" + (Target is null ? string.Empty : $" on {TargetType}:{Target}");

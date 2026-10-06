@@ -53,6 +53,16 @@ internal static class ReadOnlyPolicy
 		"list",
 	}.ToFrozenSet(StringComparer.Ordinal);
 
+	/// <summary>The permitted functions for each permitted client. A client that is absent here is refused.</summary>
+	private static readonly FrozenDictionary<string, FrozenSet<string>> PermittedFunctionsByClient =
+		new Dictionary<string, FrozenSet<string>>(StringComparer.Ordinal)
+		{
+			["local"] = LocalFunctions,
+			["local_async"] = LocalFunctions,
+			["runner"] = RunnerFunctions,
+			["wheel"] = WheelFunctions,
+		}.ToFrozenDictionary(StringComparer.Ordinal);
+
 	/// <summary>
 	/// Throws <see cref="SaltReadOnlyViolationException"/> unless every lowstate is permitted.
 	/// </summary>
@@ -134,6 +144,20 @@ internal static class ReadOnlyPolicy
 		return null;
 	}
 
+	/// <summary>
+	/// The checks applied to each lowstate, in order. Each returns the reason for refusal, or <see langword="null"/>.
+	/// The client and function check comes before the checks that rely on them being valid.
+	/// </summary>
+	private static readonly Func<JsonElement, string?>[] LowstateChecks =
+	[
+		CheckKeys,
+		CheckClientAndFunction,
+		CheckTarget,
+		CheckArguments,
+		CheckKeywordArguments,
+		CheckListUpgrades,
+	];
+
 	private static string? CheckLowstate(JsonElement lowstate)
 	{
 		if (lowstate.ValueKind != JsonValueKind.Object)
@@ -141,6 +165,20 @@ internal static class ReadOnlyPolicy
 			return "it is not a JSON object.";
 		}
 
+		foreach (var check in LowstateChecks)
+		{
+			var reason = check(lowstate);
+			if (reason is not null)
+			{
+				return reason;
+			}
+		}
+
+		return null;
+	}
+
+	private static string? CheckKeys(JsonElement lowstate)
+	{
 		foreach (var property in lowstate.EnumerateObject())
 		{
 			if (!PermittedKeys.Contains(property.Name))
@@ -149,6 +187,11 @@ internal static class ReadOnlyPolicy
 			}
 		}
 
+		return null;
+	}
+
+	private static string? CheckClientAndFunction(JsonElement lowstate)
+	{
 		var client = GetString(lowstate, "client");
 		var function = GetString(lowstate, "fun");
 		if (string.IsNullOrEmpty(client))
@@ -161,80 +204,83 @@ internal static class ReadOnlyPolicy
 			return "'fun' is missing, empty or not a string.";
 		}
 
-		var permitted = client switch
-		{
-			"local" or "local_async" => LocalFunctions,
-			"runner" => RunnerFunctions,
-			"wheel" => WheelFunctions,
-			_ => null,
-		};
-
-		if (permitted is null)
+		if (!PermittedFunctionsByClient.TryGetValue(client, out var permitted))
 		{
 			return $"the client '{client}' is not permitted.";
 		}
 
-		if (!permitted.Contains(function))
-		{
-			return $"'{client}' '{function}' is not on the read-only allow-list.";
-		}
+		return permitted.Contains(function) ? null : $"'{client}' '{function}' is not on the read-only allow-list.";
+	}
 
+	private static string? CheckTarget(JsonElement lowstate)
+	{
+		var client = GetString(lowstate, "client")!;
 		if (client is "local" or "local_async")
 		{
-			if (string.IsNullOrWhiteSpace(GetString(lowstate, "tgt")))
-			{
-				return $"'{function}' needs a non-empty 'tgt'.";
-			}
-
-			if (lowstate.TryGetProperty("tgt_type", out var targetType)
-				&& (targetType.ValueKind != JsonValueKind.String || !PermittedTargetTypes.Contains(targetType.GetString()!)))
-			{
-				return "'tgt_type' must be 'glob' or 'list'.";
-			}
+			return CheckLocalTarget(lowstate);
 		}
-		else if (lowstate.TryGetProperty("tgt", out _) || lowstate.TryGetProperty("tgt_type", out _))
+
+		var hasTarget = lowstate.TryGetProperty("tgt", out _) || lowstate.TryGetProperty("tgt_type", out _);
+		return hasTarget ? $"'{client}' does not take a target." : null;
+	}
+
+	private static string? CheckLocalTarget(JsonElement lowstate)
+	{
+		if (string.IsNullOrWhiteSpace(GetString(lowstate, "tgt")))
 		{
-			return $"'{client}' does not take a target.";
+			return $"'{GetString(lowstate, "fun")}' needs a non-empty 'tgt'.";
 		}
 
-		if (lowstate.TryGetProperty("arg", out var arguments))
+		if (!lowstate.TryGetProperty("tgt_type", out var targetType))
 		{
-			if (arguments.ValueKind != JsonValueKind.Array)
-			{
-				return "'arg' must be an array.";
-			}
-
-			foreach (var argument in arguments.EnumerateArray())
-			{
-				// Salt turns a "name=value" positional argument into a keyword argument, which would get past the kwarg checks.
-				if (argument.ValueKind != JsonValueKind.String || argument.GetString()!.Contains('=', StringComparison.Ordinal))
-				{
-					return "every 'arg' entry must be a string without '='.";
-				}
-			}
+			return null;
 		}
 
-		if (lowstate.TryGetProperty("kwarg", out var keywordArguments) && keywordArguments.ValueKind != JsonValueKind.Object)
+		var isPermitted = targetType.ValueKind == JsonValueKind.String && PermittedTargetTypes.Contains(targetType.GetString()!);
+		return isPermitted ? null : "'tgt_type' must be 'glob' or 'list'.";
+	}
+
+	private static string? CheckArguments(JsonElement lowstate)
+	{
+		if (!lowstate.TryGetProperty("arg", out var arguments))
 		{
-			return "'kwarg' must be an object.";
+			return null;
 		}
 
-		if (function == "pkg.list_upgrades")
+		if (arguments.ValueKind != JsonValueKind.Array)
 		{
-			if (arguments.ValueKind == JsonValueKind.Array && arguments.GetArrayLength() > 0)
-			{
-				return "'pkg.list_upgrades' takes no positional arguments in read-only mode.";
-			}
-
-			if (keywordArguments.ValueKind == JsonValueKind.Object
-				&& keywordArguments.TryGetProperty("refresh", out var refresh)
-				&& refresh.ValueKind != JsonValueKind.False)
-			{
-				return "'pkg.list_upgrades' with refresh other than false runs apt-get update.";
-			}
+			return "'arg' must be an array.";
 		}
 
-		return null;
+		// Salt turns a "name=value" positional argument into a keyword argument, which would get past the kwarg checks.
+		return arguments.EnumerateArray().All(IsPlainStringArgument) ? null : "every 'arg' entry must be a string without '='.";
+	}
+
+	private static bool IsPlainStringArgument(JsonElement argument)
+		=> argument.ValueKind == JsonValueKind.String && !argument.GetString()!.Contains('=', StringComparison.Ordinal);
+
+	private static string? CheckKeywordArguments(JsonElement lowstate)
+		=> lowstate.TryGetProperty("kwarg", out var keywordArguments) && keywordArguments.ValueKind != JsonValueKind.Object
+			? "'kwarg' must be an object."
+			: null;
+
+	private static string? CheckListUpgrades(JsonElement lowstate)
+	{
+		if (GetString(lowstate, "fun") != "pkg.list_upgrades")
+		{
+			return null;
+		}
+
+		if (lowstate.TryGetProperty("arg", out var arguments) && arguments.GetArrayLength() > 0)
+		{
+			return "'pkg.list_upgrades' takes no positional arguments in read-only mode.";
+		}
+
+		return lowstate.TryGetProperty("kwarg", out var keywordArguments)
+			&& keywordArguments.TryGetProperty("refresh", out var refresh)
+			&& refresh.ValueKind != JsonValueKind.False
+				? "'pkg.list_upgrades' with refresh other than false runs apt-get update."
+				: null;
 	}
 
 	private static bool IsPermittedGetPath(string relativePath)

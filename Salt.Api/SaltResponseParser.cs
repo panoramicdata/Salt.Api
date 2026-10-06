@@ -33,6 +33,16 @@ internal static class SaltResponseParser
 			: throw new SaltApiException("The response has no 'return' value.");
 
 	/// <summary>
+	/// Maps an object keyed by minion id to per-minion results, deserialising each value as <typeparamref name="T"/>.
+	/// </summary>
+	internal static MinionResultDictionary<T> ParseMinions<T>(
+		JsonElement element,
+		IReadOnlyList<string>? expectedMinionIds,
+		bool stringIsFailure,
+		bool falseIsFailure)
+		=> ParseMinions<T>(element, expectedMinionIds, stringIsFailure, falseIsFailure, null);
+
+	/// <summary>
 	/// Maps an object keyed by minion id to per-minion results.
 	/// </summary>
 	/// <param name="element">The object keyed by minion id.</param>
@@ -45,7 +55,7 @@ internal static class SaltResponseParser
 		IReadOnlyList<string>? expectedMinionIds,
 		bool stringIsFailure,
 		bool falseIsFailure,
-		Func<JsonElement, T>? convert = null)
+		Func<JsonElement, T>? convert)
 	{
 		if (element.ValueKind != JsonValueKind.Object)
 		{
@@ -115,42 +125,66 @@ internal static class SaltResponseParser
 
 	internal static SaltJobResult ParseJobResult(JsonElement root, string jid)
 	{
-		if (root.ValueKind != JsonValueKind.Object
-			|| !root.TryGetProperty("info", out var infoArray)
-			|| infoArray.ValueKind != JsonValueKind.Array
-			|| infoArray.GetArrayLength() == 0
-			|| infoArray[0].ValueKind != JsonValueKind.Object)
+		if (!TryGetJobInfo(root, out var info))
 		{
 			return new SaltJobResult { Jid = jid };
-		}
-
-		var info = infoArray[0];
-		var returns = new Dictionary<string, JobMinionReturn>(StringComparer.Ordinal);
-		if (info.TryGetProperty("Result", out var result) && result.ValueKind == JsonValueKind.Object)
-		{
-			foreach (var property in result.EnumerateObject())
-			{
-				returns[property.Name] = property.Value.ValueKind == JsonValueKind.Object && property.Value.TryGetProperty("return", out _)
-					? property.Value.Deserialize<JobMinionReturn>(SaltJson.Options)!
-					: new JobMinionReturn { Return = property.Value.Clone() };
-			}
 		}
 
 		return new SaltJobResult
 		{
 			Jid = GetString(info, "jid") ?? jid,
 			Function = GetString(info, "Function"),
-			Arguments = info.TryGetProperty("Arguments", out var arguments) ? arguments.Clone() : default,
-			Target = info.TryGetProperty("Target", out var target) ? target.Clone() : default,
+			Arguments = CloneProperty(info, "Arguments"),
+			Target = CloneProperty(info, "Target"),
 			TargetType = GetString(info, "Target-type"),
 			User = GetString(info, "User"),
 			StartTime = GetString(info, "StartTime"),
-			Minions = info.TryGetProperty("Minions", out var minions) && minions.ValueKind == JsonValueKind.Array
-				? [.. minions.EnumerateArray().Where(m => m.ValueKind == JsonValueKind.String).Select(m => m.GetString()!)]
-				: [],
-			Returns = returns,
+			Minions = ReadStrings(info, "Minions"),
+			Returns = ParseJobReturns(info),
 		};
 	}
+
+	private static bool TryGetJobInfo(JsonElement root, out JsonElement info)
+	{
+		info = default;
+		if (root.ValueKind != JsonValueKind.Object
+			|| !root.TryGetProperty("info", out var infoArray)
+			|| infoArray.ValueKind != JsonValueKind.Array
+			|| infoArray.GetArrayLength() == 0)
+		{
+			return false;
+		}
+
+		info = infoArray[0];
+		return info.ValueKind == JsonValueKind.Object;
+	}
+
+	private static Dictionary<string, JobMinionReturn> ParseJobReturns(JsonElement info)
+	{
+		var returns = new Dictionary<string, JobMinionReturn>(StringComparer.Ordinal);
+		if (info.TryGetProperty("Result", out var result) && result.ValueKind == JsonValueKind.Object)
+		{
+			foreach (var property in result.EnumerateObject())
+			{
+				returns[property.Name] = ParseJobMinionReturn(property.Value);
+			}
+		}
+
+		return returns;
+	}
+
+	private static JobMinionReturn ParseJobMinionReturn(JsonElement value)
+		=> value.ValueKind == JsonValueKind.Object && value.TryGetProperty("return", out _)
+			? value.Deserialize<JobMinionReturn>(SaltJson.Options)!
+			: new JobMinionReturn { Return = value.Clone() };
+
+	private static JsonElement CloneProperty(JsonElement element, string name)
+		=> element.TryGetProperty(name, out var value) ? value.Clone() : default;
+
+	private static List<string> ReadStrings(JsonElement element, string name)
+		=> element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
+			? [.. value.EnumerateArray().Where(m => m.ValueKind == JsonValueKind.String).Select(m => m.GetString()!)]
+			: [];
 
 	internal static IReadOnlyList<JobSummary> ParseJobList(JsonElement root)
 	{
