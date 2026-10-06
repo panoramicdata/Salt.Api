@@ -1,0 +1,38 @@
+{
+  "return": [
+    {
+      "20261006143335074645": {
+        "Function": "no.such.function",
+        "Arguments": [],
+        "Target": "vm-01",
+        "Target-type": "glob",
+        "User": "api-user",
+        "StartTime": "2026, Oct 06 14:33:35.074645"
+      },
+      "20261006143323484480": {
+        "Function": "patchreport.status",
+        "Arguments": [],
+        "Target": "vm-01",
+        "Target-type": "glob",
+        "User": "api-user",
+        "StartTime": "2026, Oct 06 14:33:23.484480"
+      },
+      "20261006143351748113": {
+        "Function": "runner.jobs.list_job",
+        "Arguments": [],
+        "Target": "salt-master",
+        "Target-type": "list",
+        "User": "api-user",
+        "StartTime": "2026, Oct 06 14:33:51.748113"
+      },
+      "20261006140044241471": {
+        "Function": "test.ping",
+        "Arguments": [],
+        "Target": "*",
+        "Target-type": "glob",
+        "User": "api-user",
+        "StartTime": "2026, Oct 06 14:00:44.241471"
+      }
+    }
+  ]
+}

@@ -61,3 +61,6 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+# .editorconfig requires CRLF and the build enforces it (IDE0055), so check C# out with CRLF on every OS, including CI.
+*.cs text eol=crlf

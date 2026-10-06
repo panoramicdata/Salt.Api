@@ -1,0 +1,19 @@
+{
+  "return": [
+    {
+      "vm-01": {
+        "pending_upgrades": {},
+        "pending_count": 0,
+        "kept_back": [],
+        "kernelpkg_needs_reboot": true,
+        "reboot_required_file": true,
+        "held": [
+          "salt-common",
+          "salt-minion"
+        ],
+        "last_upgrade_epoch": 1791267565,
+        "last_upgrade_source": "/var/log/dpkg.log"
+      }
+    }
+  ]
+}

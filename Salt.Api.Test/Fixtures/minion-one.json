@@ -1,0 +1,12 @@
+{
+  "return": [
+    {
+      "vm-01": {
+        "id": "vm-01",
+        "os": "Ubuntu",
+        "osrelease": "22.04",
+        "patch_class": "pvg"
+      }
+    }
+  ]
+}

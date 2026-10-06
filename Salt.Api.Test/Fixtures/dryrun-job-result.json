@@ -1,0 +1,177 @@
+{
+  "info": [
+    {
+      "jid": "20261006143338086181",
+      "Function": "state.apply",
+      "Arguments": [
+        "patch.apply",
+        {
+          "__kwarg__": true,
+          "test": true
+        }
+      ],
+      "Target": "vm-01",
+      "Target-type": "glob",
+      "User": "api-user",
+      "Minions": [
+        "vm-01"
+      ],
+      "StartTime": "2026, Oct 06 14:33:38.086181",
+      "Result": {
+        "vm-01": {
+          "return": {
+            "file_|-patch-needrestart-config_|-/etc/needrestart/conf.d/site.conf_|-managed": {
+              "changes": {
+                "diff": "--- \n+++ \n@@ -1,2 +1,2 @@\n-# list only, so a Salt apply never restarts services\n+# Managed by Salt (patch.needrestart). Do not edit: list services needing a restart, never restart them.\n $nrconf{restart} = 'l';\n"
+              },
+              "comment": "The file /etc/needrestart/conf.d/site.conf is set to be changed\nNote: No changes made, actual changes may\nbe different due to other states.",
+              "name": "/etc/needrestart/conf.d/site.conf",
+              "result": null,
+              "__sls__": "patch.needrestart",
+              "__run_num__": 0,
+              "start_time": "14:33:38.862678",
+              "duration": 14.352,
+              "__id__": "patch-needrestart-config"
+            },
+            "pkg_|-hold-salt-minion_|-salt-minion_|-held": {
+              "name": "salt-minion",
+              "changes": {},
+              "result": true,
+              "comment": "No changes made",
+              "__sls__": "patch.holds",
+              "__run_num__": 1,
+              "start_time": "14:33:38.888505",
+              "duration": 43.498,
+              "__id__": "hold-salt-minion"
+            },
+            "pkg_|-hold-salt-common_|-salt-common_|-held": {
+              "name": "salt-common",
+              "changes": {},
+              "result": true,
+              "comment": "No changes made",
+              "__sls__": "patch.holds",
+              "__run_num__": 2,
+              "start_time": "14:33:38.932245",
+              "duration": 41.427,
+              "__id__": "hold-salt-common"
+            },
+            "test_|-patch-holds_|-patch-holds_|-nop": {
+              "name": "patch-holds",
+              "changes": {},
+              "result": true,
+              "comment": "Success!",
+              "__sls__": "patch.holds",
+              "__run_num__": 3,
+              "start_time": "14:33:38.976336",
+              "duration": 0.5,
+              "__id__": "patch-holds"
+            },
+            "pkg_|-patch-apply_|-patch-apply_|-uptodate": {
+              "name": "patch-apply",
+              "changes": {
+                "libfreetype6": {
+                  "new": "2.11.1+dfsg-1ubuntu0.4",
+                  "old": "2.11.1+dfsg-1ubuntu0.3"
+                },
+                "libsgutils2-2": {
+                  "new": "1.46-1ubuntu0.22.04.2",
+                  "old": "1.46-1ubuntu0.22.04.1"
+                },
+                "libunbound8": {
+                  "new": "1.13.1-1ubuntu5.16",
+                  "old": "1.13.1-1ubuntu5.15"
+                }
+              },
+              "result": null,
+              "comment": "System update will be performed",
+              "__sls__": "patch.apply",
+              "__run_num__": 4,
+              "start_time": "14:33:38.977162",
+              "duration": 22223.479,
+              "__id__": "patch-apply"
+            }
+          },
+          "retcode": 0,
+          "success": true,
+          "out": "highstate"
+        }
+      }
+    }
+  ],
+  "return": [
+    {
+      "vm-01": {
+        "file_|-patch-needrestart-config_|-/etc/needrestart/conf.d/site.conf_|-managed": {
+          "changes": {
+            "diff": "--- \n+++ \n@@ -1,2 +1,2 @@\n-# list only, so a Salt apply never restarts services\n+# Managed by Salt (patch.needrestart). Do not edit: list services needing a restart, never restart them.\n $nrconf{restart} = 'l';\n"
+          },
+          "comment": "The file /etc/needrestart/conf.d/site.conf is set to be changed\nNote: No changes made, actual changes may\nbe different due to other states.",
+          "name": "/etc/needrestart/conf.d/site.conf",
+          "result": null,
+          "__sls__": "patch.needrestart",
+          "__run_num__": 0,
+          "start_time": "14:33:38.862678",
+          "duration": 14.352,
+          "__id__": "patch-needrestart-config"
+        },
+        "pkg_|-hold-salt-minion_|-salt-minion_|-held": {
+          "name": "salt-minion",
+          "changes": {},
+          "result": true,
+          "comment": "No changes made",
+          "__sls__": "patch.holds",
+          "__run_num__": 1,
+          "start_time": "14:33:38.888505",
+          "duration": 43.498,
+          "__id__": "hold-salt-minion"
+        },
+        "pkg_|-hold-salt-common_|-salt-common_|-held": {
+          "name": "salt-common",
+          "changes": {},
+          "result": true,
+          "comment": "No changes made",
+          "__sls__": "patch.holds",
+          "__run_num__": 2,
+          "start_time": "14:33:38.932245",
+          "duration": 41.427,
+          "__id__": "hold-salt-common"
+        },
+        "test_|-patch-holds_|-patch-holds_|-nop": {
+          "name": "patch-holds",
+          "changes": {},
+          "result": true,
+          "comment": "Success!",
+          "__sls__": "patch.holds",
+          "__run_num__": 3,
+          "start_time": "14:33:38.976336",
+          "duration": 0.5,
+          "__id__": "patch-holds"
+        },
+        "pkg_|-patch-apply_|-patch-apply_|-uptodate": {
+          "name": "patch-apply",
+          "changes": {
+            "libfreetype6": {
+              "new": "2.11.1+dfsg-1ubuntu0.4",
+              "old": "2.11.1+dfsg-1ubuntu0.3"
+            },
+            "libsgutils2-2": {
+              "new": "1.46-1ubuntu0.22.04.2",
+              "old": "1.46-1ubuntu0.22.04.1"
+            },
+            "libunbound8": {
+              "new": "1.13.1-1ubuntu5.16",
+              "old": "1.13.1-1ubuntu5.15"
+            }
+          },
+          "result": null,
+          "comment": "System update will be performed",
+          "__sls__": "patch.apply",
+          "__run_num__": 4,
+          "start_time": "14:33:38.977162",
+          "duration": 22223.479,
+          "__id__": "patch-apply"
+        }
+      }
+    }
+  ]
+}

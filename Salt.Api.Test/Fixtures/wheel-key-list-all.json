@@ -1,0 +1,31 @@
+{
+  "return": [
+    {
+      "tag": "salt/wheel/20261006143410320546",
+      "data": {
+        "fun": "wheel.key.list_all",
+        "jid": "20261006143410320546",
+        "tag": "salt/wheel/20261006143410320546",
+        "user": "api-user",
+        "return": {
+          "minions_pre": [],
+          "minions_rejected": [],
+          "minions": [
+            "node-03",
+            "node-04",
+            "node-05",
+            "node-06",
+            "vm-01",
+            "vm-02"
+          ],
+          "minions_denied": [],
+          "local": [
+            "salt-master.pem",
+            "salt-master.pub"
+          ]
+        },
+        "success": true
+      }
+    }
+  ]
+}
