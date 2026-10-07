@@ -8,59 +8,37 @@ namespace Salt.Api.Test;
 /// </summary>
 public class ReadOnlyClientTests
 {
-	public static TheoryData<string> ForbiddenRawCalls =>
-	[
-		"cmd.run",
-		"state.apply",
-		"pkg.install",
-		"pkg.upgrade",
-		"system.reboot",
-		"no.such.function",
-	];
+	public static TheoryData<string, string> ForbiddenRawCalls => new()
+	{
+		{ "local", "cmd.run" },
+		{ "local", "state.apply" },
+		{ "local", "pkg.install" },
+		{ "local", "pkg.upgrade" },
+		{ "local", "system.reboot" },
+		{ "local", "no.such.function" },
+		{ "wheel", "key.accept" },
+		{ "wheel", "key.delete" },
+	};
 
 	[Theory]
 	[MemberData(nameof(ForbiddenRawCalls))]
-	public async Task RawForbiddenCall_IsRefusedBeforeAnyRequest(string function)
+	public async Task RawForbiddenCall_IsRefusedBeforeAnyRequest(string client, string function)
 	{
-		using var context = new SaltTestContext(o =>
-		{
-			o.ReadOnly = true;
-			o.AllowRawLowstate = true;
-		});
+		using var context = ReadOnlyRawContext();
+		var target = client == "local" ? MinionTarget.All : null;
 
 		var act = () => context.Client.ExecuteAsync<JsonElement>(
-			Lowstate.Raw("local", function, MinionTarget.All, ["arg"]),
+			Lowstate.Raw(client, function, target, ["arg"]),
 			TestContext.Current.CancellationToken);
 
 		await act.Should().ThrowAsync<SaltReadOnlyViolationException>();
 		context.Server.Requests.Should().BeEmpty("nothing, not even the login, may be sent");
 	}
 
-	[Theory]
-	[InlineData("key.accept")]
-	[InlineData("key.delete")]
-	public async Task RawWheelKeyChange_IsRefusedBeforeAnyRequest(string function)
-	{
-		using var context = new SaltTestContext(o =>
-		{
-			o.ReadOnly = true;
-			o.AllowRawLowstate = true;
-		});
-
-		var act = () => context.Client.ExecuteAsync<JsonElement>(Lowstate.Raw("wheel", function), TestContext.Current.CancellationToken);
-
-		await act.Should().ThrowAsync<SaltReadOnlyViolationException>();
-		context.Server.Requests.Should().BeEmpty();
-	}
-
 	[Fact]
 	public async Task MultiCommandRequest_WithOneForbiddenElement_IsRefusedWhole()
 	{
-		using var context = new SaltTestContext(o =>
-		{
-			o.ReadOnly = true;
-			o.AllowRawLowstate = true;
-		});
+		using var context = ReadOnlyRawContext();
 
 		var act = () => context.Client.ExecuteAsync(
 			[Lowstate.Ping(MinionTarget.All), Lowstate.Raw("local", "cmd.run", MinionTarget.All, ["id"])],
@@ -108,11 +86,7 @@ public class ReadOnlyClientTests
 	[Fact]
 	public async Task RawPermittedCall_IsAllowedInReadOnlyMode()
 	{
-		using var context = new SaltTestContext(o =>
-		{
-			o.ReadOnly = true;
-			o.AllowRawLowstate = true;
-		});
+		using var context = ReadOnlyRawContext();
 		context.Server.OnRun("ping-one.json");
 
 		var result = await context.Client.ExecuteOnMinionsAsync<bool>(
@@ -125,11 +99,7 @@ public class ReadOnlyClientTests
 	[Fact]
 	public async Task ChangingTheOptionsAfterConstruction_DoesNotTurnOffReadOnly()
 	{
-		using var context = new SaltTestContext(o =>
-		{
-			o.ReadOnly = true;
-			o.AllowRawLowstate = true;
-		});
+		using var context = ReadOnlyRawContext();
 		context.Options.ReadOnly = false;
 
 		var act = () => context.Client.ExecuteAsync<JsonElement>(Lowstate.Raw("local", "cmd.run", MinionTarget.All, ["id"]), TestContext.Current.CancellationToken);
@@ -172,19 +142,12 @@ public class ReadOnlyClientTests
 	[Fact]
 	public async Task Handler_RefusesAForbiddenBody_ThatBypassedTheClient()
 	{
-		var server = new FakeSaltServer();
-		var options = new SaltClientOptions { BaseUrl = "https://salt.example.test", Username = "u", Password = "p", ReadOnly = true };
-		using var handler = new SaltAuthenticatingHandler(options, NullLogger.Instance, server, TimeProvider.System, (_, _) => Task.CompletedTask, "test");
-		using var invoker = new HttpMessageInvoker(handler);
 		using var request = new HttpRequestMessage(HttpMethod.Post, "https://salt.example.test/")
 		{
 			Content = new StringContent("""[{"client":"local","tgt":"*","fun":"cmd.run","arg":["id"]}]""", Encoding.UTF8, "application/json"),
 		};
 
-		var act = () => invoker.SendAsync(request, TestContext.Current.CancellationToken);
-
-		await act.Should().ThrowAsync<SaltReadOnlyViolationException>();
-		server.Requests.Should().BeEmpty();
+		await AssertReadOnlyHandlerRefusesBeforeSendingAsync(request);
 	}
 
 	[Theory]
@@ -194,11 +157,23 @@ public class ReadOnlyClientTests
 	[InlineData("DELETE", "https://salt.example.test/keys/vm-01")]
 	public async Task Handler_RefusesOtherEndpoints(string method, string url)
 	{
-		var server = new FakeSaltServer();
-		var options = new SaltClientOptions { BaseUrl = "https://salt.example.test", Username = "u", Password = "p", ReadOnly = true };
-		using var handler = new SaltAuthenticatingHandler(options, NullLogger.Instance, server, TimeProvider.System, (_, _) => Task.CompletedTask, "test");
-		using var invoker = new HttpMessageInvoker(handler);
 		using var request = new HttpRequestMessage(new HttpMethod(method), url);
+
+		await AssertReadOnlyHandlerRefusesBeforeSendingAsync(request);
+	}
+
+	private static SaltTestContext ReadOnlyRawContext() => new(o =>
+	{
+		o.ReadOnly = true;
+		o.AllowRawLowstate = true;
+	});
+
+	/// <summary>Sends a request straight through a read-only handler, bypassing the client, and asserts it never leaves.</summary>
+	private static async Task AssertReadOnlyHandlerRefusesBeforeSendingAsync(HttpRequestMessage request)
+	{
+		var server = new FakeSaltServer();
+		using var handler = TestHandlers.Create(server, readOnly: true);
+		using var invoker = new HttpMessageInvoker(handler);
 
 		var act = () => invoker.SendAsync(request, TestContext.Current.CancellationToken);
 

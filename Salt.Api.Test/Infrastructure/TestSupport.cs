@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Salt.Api.Test.Infrastructure;
 
@@ -79,4 +80,23 @@ internal sealed class SaltTestContext : IDisposable
 	public SaltClient Client { get; }
 
 	public void Dispose() => Client.Dispose();
+}
+
+/// <summary>
+/// Builds a <see cref="SaltAuthenticatingHandler"/> over a fake server, for tests that bypass the client.
+/// </summary>
+internal static class TestHandlers
+{
+	public static SaltAuthenticatingHandler Create(FakeSaltServer server, bool readOnly)
+	{
+		var options = new SaltClientOptions
+		{
+			BaseUrl = "https://salt.example.test",
+			Username = "u",
+			Password = "p",
+			ReadOnly = readOnly,
+			MaxAttemptCount = 5,
+		};
+		return new SaltAuthenticatingHandler(options, NullLogger.Instance, server, TimeProvider.System, (_, _) => Task.CompletedTask, "test");
+	}
 }
