@@ -1,6 +1,6 @@
 param(
 	# Skips waiting for the release run. The tag is still pushed, but nothing confirms a package
-	# reached nuget.org — use it only if you are checking the run yourself.
+	# reached nuget.org; use it only if you are checking the run yourself.
 	[switch]$SkipPublishVerification
 )
 
@@ -110,7 +110,7 @@ for ($attempt = 1; $attempt -le 12 -and -not $runId; $attempt++) {
 }
 
 if (-not $runId) {
-	Write-Error "Tag $version was pushed but no run appeared for it. Check https://github.com/$repoFullName/actions — the workflow may not trigger on tags."
+	Write-Error "Tag $version was pushed but no run appeared for it. Check https://github.com/$repoFullName/actions: the workflow may not trigger on tags."
 	exit 1
 }
 
@@ -122,7 +122,7 @@ if ($runExitCode -ne 0) {
 	Write-Information ""
 	Write-Warning "The release run did not succeed: https://github.com/$repoFullName/actions/runs/$runId"
 
-	# A refused job — an exhausted Actions budget, for instance — fails before any step runs, so it
+	# A refused job (an exhausted Actions budget, for instance) fails before any step runs, so it
 	# has no failed step to report. The check-run annotation is the only place the reason appears.
 	$jobId = gh api "repos/$repoFullName/actions/runs/$runId/jobs" --jq '.jobs[0].id' 2>$null
 	if ($LASTEXITCODE -eq 0 -and $jobId) {
