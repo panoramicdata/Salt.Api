@@ -10,13 +10,9 @@ public class RetryTests
 	[Fact]
 	public async Task A429OnLogin_BacksOff_ThenSucceeds()
 	{
-		using var context = new SaltTestContext();
-		var refusals = 2;
-		context.Server
-			.On(r => r.IsLogin && refusals-- > 0 ? FakeSaltServer.Html(HttpStatusCode.TooManyRequests, "Too Many Requests") : null)
-			.OnRun("ping-one.json");
+		using var context = FailThenAnswerPing(r => r.IsLogin, HttpStatusCode.TooManyRequests, failures: 2);
 
-		var result = await context.Client.PingAsync(MinionTarget.List("vm-01"), TestContext.Current.CancellationToken);
+		var result = await PingAsync(context);
 
 		result.AllSucceeded.Should().BeTrue();
 		context.Server.LoginRequests.Should().HaveCount(3);
@@ -29,12 +25,9 @@ public class RetryTests
 	public async Task A429_ThatPersists_ThrowsAfterMaxAttempts()
 	{
 		using var context = new SaltTestContext(o => o.MaxAttemptCount = 3);
-		context.Server.On(r => r.IsRun ? FakeSaltServer.Html(HttpStatusCode.TooManyRequests, "Too Many Requests") : null);
 
-		var act = () => context.Client.PingAsync(MinionTarget.List("vm-01"), TestContext.Current.CancellationToken);
+		await AssertEveryRunFailsWithAsync(context, HttpStatusCode.TooManyRequests);
 
-		var thrown = await act.Should().ThrowAsync<SaltApiException>();
-		thrown.Which.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
 		context.Server.NonLoginRequests.Should().HaveCount(3);
 		context.Delays.Should().HaveCount(2).And.OnlyContain(d => d <= TimeSpan.FromSeconds(30));
 	}
@@ -64,14 +57,7 @@ public class RetryTests
 	[InlineData(500, false, true, 1, SaltAuthenticatingHandler.RetryAction.Fail)]
 	internal void DecideRetry_RetriesOnlyWhatIsSafe(int status, bool reloggedIn, bool isReadOnlySafe, int attempt, SaltAuthenticatingHandler.RetryAction expected)
 	{
-		var options = new SaltClientOptions { BaseUrl = "https://salt.example.test", Username = "u", Password = "p", MaxAttemptCount = 5 };
-		using var handler = new SaltAuthenticatingHandler(
-			options,
-			Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance,
-			new FakeSaltServer(),
-			TimeProvider.System,
-			(_, _) => Task.CompletedTask,
-			"test");
+		using var handler = TestHandlers.Create(new FakeSaltServer(), readOnly: false);
 
 		handler.DecideRetry(status, reloggedIn, isReadOnlySafe, attempt).Should().Be(expected);
 	}
@@ -79,13 +65,9 @@ public class RetryTests
 	[Fact]
 	public async Task A503_OnAReadOnlyCall_IsRetried()
 	{
-		using var context = new SaltTestContext();
-		var failures = 1;
-		context.Server
-			.On(r => r.IsRun && failures-- > 0 ? FakeSaltServer.Html(HttpStatusCode.ServiceUnavailable, "maintenance") : null)
-			.OnRun("ping-one.json");
+		using var context = FailThenAnswerPing(r => r.IsRun, HttpStatusCode.ServiceUnavailable, failures: 1);
 
-		var result = await context.Client.PingAsync(MinionTarget.List("vm-01"), TestContext.Current.CancellationToken);
+		var result = await PingAsync(context);
 
 		result.AllSucceeded.Should().BeTrue();
 		context.Server.NonLoginRequests.Should().HaveCount(2);
@@ -110,12 +92,37 @@ public class RetryTests
 	public async Task AnErrorBody_IsHtml_AndIsReportedByStatus()
 	{
 		using var context = new SaltTestContext();
-		context.Server.On(r => r.IsRun ? FakeSaltServer.Html(HttpStatusCode.InternalServerError, "An unexpected error occurred") : null);
 
-		var act = () => context.Client.PingAsync(MinionTarget.List("vm-01"), TestContext.Current.CancellationToken);
+		var thrown = await AssertEveryRunFailsWithAsync(context, HttpStatusCode.InternalServerError);
+
+		thrown.ResponseText.Should().Contain(StatusText(HttpStatusCode.InternalServerError));
+	}
+
+	/// <summary>A context whose matching requests fail <paramref name="failures"/> times, then a ping succeeds.</summary>
+	private static SaltTestContext FailThenAnswerPing(Func<RecordedRequest, bool> when, HttpStatusCode status, int failures)
+	{
+		var context = new SaltTestContext();
+		var remaining = failures;
+		context.Server
+			.On(r => when(r) && remaining-- > 0 ? FakeSaltServer.Html(status, StatusText(status)) : null)
+			.OnRun("ping-one.json");
+		return context;
+	}
+
+	/// <summary>Makes every run fail with <paramref name="status"/>, pings, and asserts the typed exception.</summary>
+	private static async Task<SaltApiException> AssertEveryRunFailsWithAsync(SaltTestContext context, HttpStatusCode status)
+	{
+		context.Server.On(r => r.IsRun ? FakeSaltServer.Html(status, StatusText(status)) : null);
+
+		var act = () => PingAsync(context);
 
 		var thrown = await act.Should().ThrowAsync<SaltApiException>();
-		thrown.Which.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-		thrown.Which.ResponseText.Should().Contain("An unexpected error occurred");
+		thrown.Which.StatusCode.Should().Be(status);
+		return thrown.Which;
 	}
+
+	private static Task<MinionResultDictionary<bool>> PingAsync(SaltTestContext context)
+		=> context.Client.PingAsync(MinionTarget.List("vm-01"), TestContext.Current.CancellationToken);
+
+	private static string StatusText(HttpStatusCode status) => $"Salt returned {(int)status}";
 }

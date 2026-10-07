@@ -3,11 +3,8 @@ namespace Salt.Api;
 /// <summary>
 /// Maps Salt response JSON to the typed models.
 /// </summary>
-internal static class SaltResponseParser
+internal static partial class SaltResponseParser
 {
-	/// <summary>The start of the key of every <c>pkg</c> state: <c>pkg_|-&lt;id&gt;_|-&lt;name&gt;_|-&lt;function&gt;</c>.</summary>
-	private const string PackageStateKeyPrefix = "pkg_|-";
-
 	/// <summary>
 	/// Returns element <paramref name="index"/> of the <c>return</c> array.
 	/// </summary>
@@ -106,158 +103,6 @@ internal static class SaltResponseParser
 			: null;
 	}
 
-	internal static SaltJob? ParseSubmittedJob(JsonElement element)
-	{
-		if (element.ValueKind != JsonValueKind.Object
-			|| !element.TryGetProperty("jid", out var jid)
-			|| jid.ValueKind != JsonValueKind.String
-			|| string.IsNullOrEmpty(jid.GetString()))
-		{
-			return null;
-		}
-
-		var minions = element.TryGetProperty("minions", out var minionsElement) && minionsElement.ValueKind == JsonValueKind.Array
-			? minionsElement.EnumerateArray().Where(m => m.ValueKind == JsonValueKind.String).Select(m => m.GetString()!).ToList()
-			: [];
-
-		return minions.Count == 0 ? null : new SaltJob(jid.GetString()!, minions);
-	}
-
-	internal static SaltJobResult ParseJobResult(JsonElement root, string jid)
-	{
-		if (!TryGetJobInfo(root, out var info))
-		{
-			return new SaltJobResult { Jid = jid };
-		}
-
-		return new SaltJobResult
-		{
-			Jid = GetString(info, "jid") ?? jid,
-			Function = GetString(info, "Function"),
-			Arguments = CloneProperty(info, "Arguments"),
-			Target = CloneProperty(info, "Target"),
-			TargetType = GetString(info, "Target-type"),
-			User = GetString(info, "User"),
-			StartTime = GetString(info, "StartTime"),
-			Minions = ReadStrings(info, "Minions"),
-			Returns = ParseJobReturns(info),
-		};
-	}
-
-	private static bool TryGetJobInfo(JsonElement root, out JsonElement info)
-	{
-		info = default;
-		if (root.ValueKind != JsonValueKind.Object
-			|| !root.TryGetProperty("info", out var infoArray)
-			|| infoArray.ValueKind != JsonValueKind.Array
-			|| infoArray.GetArrayLength() == 0)
-		{
-			return false;
-		}
-
-		info = infoArray[0];
-		return info.ValueKind == JsonValueKind.Object;
-	}
-
-	private static Dictionary<string, JobMinionReturn> ParseJobReturns(JsonElement info)
-	{
-		var returns = new Dictionary<string, JobMinionReturn>(StringComparer.Ordinal);
-		if (info.TryGetProperty("Result", out var result) && result.ValueKind == JsonValueKind.Object)
-		{
-			foreach (var property in result.EnumerateObject())
-			{
-				returns[property.Name] = ParseJobMinionReturn(property.Value);
-			}
-		}
-
-		return returns;
-	}
-
-	private static JobMinionReturn ParseJobMinionReturn(JsonElement value)
-		=> value.ValueKind == JsonValueKind.Object && value.TryGetProperty("return", out _)
-			? value.Deserialize<JobMinionReturn>(SaltJson.Options)!
-			: new JobMinionReturn { Return = value.Clone() };
-
-	private static JsonElement CloneProperty(JsonElement element, string name)
-		=> element.TryGetProperty(name, out var value) ? value.Clone() : default;
-
-	private static List<string> ReadStrings(JsonElement element, string name)
-		=> element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Array
-			? [.. value.EnumerateArray().Where(m => m.ValueKind == JsonValueKind.String).Select(m => m.GetString()!)]
-			: [];
-
-	internal static IReadOnlyList<JobSummary> ParseJobList(JsonElement root)
-	{
-		var element = GetReturnElement(root, 0);
-		if (element.ValueKind != JsonValueKind.Object)
-		{
-			throw new SaltApiException("Expected an object keyed by job id.");
-		}
-
-		var jobs = new List<JobSummary>();
-		foreach (var property in element.EnumerateObject())
-		{
-			var job = property.Value.Deserialize<JobSummary>(SaltJson.Options)!;
-			job.Jid = property.Name;
-			jobs.Add(job);
-		}
-
-		return [.. jobs.OrderByDescending(j => j.Jid, StringComparer.Ordinal)];
-	}
-
-	/// <summary>
-	/// Maps one minion's state-run return to a <see cref="PatchStateRun"/>.
-	/// </summary>
-	/// <param name="minionReturn">The minion's return.</param>
-	/// <param name="packageStateId">The <c>__id__</c> of the <c>pkg</c> state whose changes are the package upgrades.</param>
-	/// <exception cref="FormatException">The return is not an object of state results (for example a render error, which Salt returns as a list of strings).</exception>
-	internal static PatchStateRun ParseStateRun(JobMinionReturn minionReturn, string packageStateId)
-	{
-		ArgumentException.ThrowIfNullOrEmpty(packageStateId);
-		var states = minionReturn.Return;
-		if (states.ValueKind != JsonValueKind.Object)
-		{
-			throw new FormatException(DescribeNonStateReturn(states));
-		}
-
-		var results = new List<StateResult>();
-		foreach (var property in states.EnumerateObject())
-		{
-			if (property.Value.ValueKind != JsonValueKind.Object)
-			{
-				throw new FormatException(DescribeNonStateReturn(states));
-			}
-
-			var state = property.Value.Deserialize<StateResult>(SaltJson.Options)!;
-			state.Key = property.Name;
-			results.Add(state);
-		}
-
-		var packageState = results.FirstOrDefault(s =>
-			s.Key.StartsWith(PackageStateKeyPrefix, StringComparison.Ordinal)
-			&& string.Equals(s.Id, packageStateId, StringComparison.Ordinal));
-		var packageChanges = new Dictionary<string, PackageChange>(StringComparer.Ordinal);
-		if (packageState is not null && packageState.Changes.ValueKind == JsonValueKind.Object)
-		{
-			foreach (var change in packageState.Changes.EnumerateObject())
-			{
-				if (change.Value.ValueKind == JsonValueKind.Object)
-				{
-					packageChanges[change.Name] = new PackageChange(GetString(change.Value, "old"), GetString(change.Value, "new"));
-				}
-			}
-		}
-
-		return new PatchStateRun
-		{
-			States = [.. results.OrderBy(s => s.RunNumber)],
-			RetCode = minionReturn.RetCode,
-			Success = minionReturn.Success,
-			PackageState = packageState,
-			PackageChanges = packageChanges,
-		};
-	}
-
 	private static MinionResult<T> ParseMinion<T>(
 		string minionId,
 		JsonElement value,
@@ -284,14 +129,6 @@ internal static class SaltResponseParser
 			return MinionResult.Failure<T>(minionId, MinionFailureKind.UnexpectedShape, $"The minion's value could not be read as {typeof(T).Name}: {ex.Message}");
 		}
 	}
-
-	private static string DescribeNonStateReturn(JsonElement value)
-		=> value.ValueKind switch
-		{
-			JsonValueKind.String => value.GetString()!,
-			JsonValueKind.Array => string.Join(Environment.NewLine, value.EnumerateArray().Select(v => v.ValueKind == JsonValueKind.String ? v.GetString() : v.GetRawText())),
-			_ => $"The minion returned {value.ValueKind} instead of state results.",
-		};
 
 	private static string? GetString(JsonElement element, string name)
 		=> element.ValueKind == JsonValueKind.Object && element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
