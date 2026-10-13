@@ -38,9 +38,11 @@ if (-not $SkipPublishVerification) {
 		exit 1
 	}
 
-	gh auth status 2>&1 | Out-Null
+	# This only reads the stored login. The "status" subcommand makes an API call instead, so a GitHub
+	# rate limit makes it report "The token in keyring is invalid" for a perfectly good login.
+	gh auth token 2>&1 | Out-Null
 	if ($LASTEXITCODE -ne 0) {
-		Write-Error "The GitHub CLI is not authenticated. Run 'gh auth login', or re-run with -SkipPublishVerification to publish without verification."
+		Write-Error "The GitHub CLI has no stored login. Run 'gh auth login', or re-run with -SkipPublishVerification to publish without verification."
 		exit 1
 	}
 }
@@ -81,9 +83,26 @@ if ($existingTag) {
 	exit 1
 }
 
-# Create and push tag
+# Create and push tag. A push can fail transiently (a dropped connection, a DNS error), so it is
+# retried, and the tag is never reported as pushed unless git says it was. If it still fails, the
+# local tag is removed, so a re-run starts clean instead of stopping at "Tag already exists".
 git tag $version
-git push origin $version
+$pushed = $false
+for ($attempt = 1; $attempt -le 3 -and -not $pushed; $attempt++) {
+	git push origin $version
+	if ($LASTEXITCODE -eq 0) {
+		$pushed = $true
+	}
+	elseif ($attempt -lt 3) {
+		Write-Warning "Pushing tag $version failed (attempt $attempt of 3); retrying."
+		Start-Sleep -Seconds 5
+	}
+}
+if (-not $pushed) {
+	git tag -d $version | Out-Null
+	Write-Error "Could not push tag $version to origin, so nothing was published. The local tag has been removed; re-run when the connection is back."
+	exit 1
+}
 Write-Information "Tag $version pushed."
 
 if ($SkipPublishVerification) {
@@ -110,7 +129,7 @@ for ($attempt = 1; $attempt -le 12 -and -not $runId; $attempt++) {
 }
 
 if (-not $runId) {
-	Write-Error "Tag $version was pushed but no run appeared for it. Check https://github.com/$repoFullName/actions: the workflow may not trigger on tags."
+	Write-Error "Tag $version was pushed but no run appeared for it. Check https://github.com/$repoFullName/actions: the workflow may not trigger on tags, or GitHub may be rate-limiting the lookups."
 	exit 1
 }
 
