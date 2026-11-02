@@ -51,7 +51,7 @@ public class ReadOnlyClientTests
 	[Fact]
 	public async Task PatchDryRun_IsRefusedInReadOnlyMode_BeforeAnyRequest()
 	{
-		using var context = new SaltTestContext(o => o.ReadOnly = true);
+		using var context = new SaltTestContext(o => o.IsReadOnly = true);
 
 		var act = () => context.Client.PatchDryRunAsync(new PatchDryRunRequest { Target = MinionTarget.List("vm-01") }, TestContext.Current.CancellationToken);
 
@@ -62,7 +62,7 @@ public class ReadOnlyClientTests
 	[Fact]
 	public async Task PatchApply_IsRefusedInReadOnlyMode_BeforeAnyRequest()
 	{
-		using var context = new SaltTestContext(o => o.ReadOnly = true);
+		using var context = new SaltTestContext(o => o.IsReadOnly = true);
 
 		var act = () => context.Client.PatchApplyAsync(
 			new PatchApplyRequest { MinionIds = ["vm-01"], ChangeReference = "CHG-1", ConfirmRealApply = true },
@@ -100,7 +100,7 @@ public class ReadOnlyClientTests
 	public async Task ChangingTheOptionsAfterConstruction_DoesNotTurnOffReadOnly()
 	{
 		using var context = ReadOnlyRawContext();
-		context.Options.ReadOnly = false;
+		context.Options.IsReadOnly = false;
 
 		var act = () => context.Client.ExecuteAsync<JsonElement>(Lowstate.Raw("local", "cmd.run", MinionTarget.All, ["id"]), TestContext.Current.CancellationToken);
 
@@ -112,7 +112,7 @@ public class ReadOnlyClientTests
 	[Fact]
 	public async Task EveryConvenienceRead_IsPermittedInReadOnlyMode()
 	{
-		using var context = new SaltTestContext(o => o.ReadOnly = true);
+		using var context = new SaltTestContext(o => o.IsReadOnly = true);
 		context.Server
 			.OnRun("ping-all.json", r => r.Body!.Contains("test.ping", StringComparison.Ordinal))
 			.OnRun("patchreport-all.json", r => r.Body!.Contains("patchreport.status", StringComparison.Ordinal))
@@ -164,7 +164,7 @@ public class ReadOnlyClientTests
 
 	private static SaltTestContext ReadOnlyRawContext() => new(o =>
 	{
-		o.ReadOnly = true;
+		o.IsReadOnly = true;
 		o.AllowRawLowstate = true;
 	});
 

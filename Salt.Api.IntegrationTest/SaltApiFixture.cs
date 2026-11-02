@@ -48,7 +48,7 @@ public sealed class SaltApiFixture : IAsyncDisposable
 		BaseUrl = Require(BaseUrlVariable, "the base URL of the TEST Salt API, for example https://salt-test.example.com"),
 		Username = Require(UsernameVariable, "the Salt API username"),
 		Password = Require(PasswordVariable, "the Salt API password, from your secret store; never commit it"),
-		ReadOnly = readOnly,
+		IsReadOnly = readOnly,
 	};
 
 	private static string Require(string name, string meaning)

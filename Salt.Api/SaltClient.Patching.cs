@@ -24,7 +24,7 @@ public sealed partial class SaltClient
 	{
 		ArgumentNullException.ThrowIfNull(request);
 		ArgumentNullException.ThrowIfNull(request.Target);
-		if (_options.ReadOnly)
+		if (_options.IsReadOnly)
 		{
 			throw new SaltReadOnlyViolationException(
 				"Read-only mode refused the patch dry run: state.apply is not permitted, even with test=True, because it refreshes apt and takes the apt lock.");
@@ -57,7 +57,7 @@ public sealed partial class SaltClient
 	public async Task<PatchRunResult> PatchApplyAsync(PatchApplyRequest request, CancellationToken cancellationToken)
 	{
 		ArgumentNullException.ThrowIfNull(request);
-		if (_options.ReadOnly)
+		if (_options.IsReadOnly)
 		{
 			throw new SaltReadOnlyViolationException("Read-only mode refused the patch apply.");
 		}

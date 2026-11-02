@@ -20,7 +20,7 @@ public sealed class PatchDryRunRequest
 /// <remarks>
 /// <para>The client refuses the request, before anything is sent, unless all of these hold:</para>
 /// <list type="bullet">
-/// <item><see cref="SaltClientOptions.ReadOnly"/> is <see langword="false"/>.</item>
+/// <item><see cref="SaltClientOptions.IsReadOnly"/> is <see langword="false"/>.</item>
 /// <item><see cref="ConfirmRealApply"/> is <see langword="true"/>.</item>
 /// <item><see cref="ChangeReference"/> is set (for example an approved change request key).</item>
 /// <item><see cref="MinionIds"/> are exact ids (no globs), at most 8 unless <see cref="AllowMoreThanEightMinions"/> is set.</item>

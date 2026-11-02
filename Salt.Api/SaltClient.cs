@@ -22,7 +22,7 @@ namespace Salt.Api;
 ///     BaseUrl = "https://salt.example.com",
 ///     Username = "api-user",
 ///     Password = passwordFromSecretStore,
-///     ReadOnly = true,
+///     IsReadOnly = true,
 /// });
 ///
 /// var status = await client.GetPatchStatusAsync(MinionTarget.List("web-01", "web-02"), cancellationToken);
@@ -102,7 +102,7 @@ public sealed partial class SaltClient : IDisposable
 	}
 
 	/// <summary>Whether this client is in read-only mode.</summary>
-	public bool IsReadOnly => _options.ReadOnly;
+	public bool IsReadOnly => _options.IsReadOnly;
 
 	/// <summary>The number of logins this client has made.</summary>
 	public int LoginCount => _handler.LoginCount;
@@ -129,7 +129,7 @@ public sealed partial class SaltClient : IDisposable
 		}
 
 		IReadOnlyList<Lowstate> prepared = [.. lowstates.Select(l => l.WithDefaultTimeout(_options.DefaultMinionTimeoutSeconds))];
-		if (_options.ReadOnly)
+		if (_options.IsReadOnly)
 		{
 			// Checked here, before any request is built, and again by the handler on the bytes about to be sent.
 			ReadOnlyPolicy.EnsureAllowed(prepared);

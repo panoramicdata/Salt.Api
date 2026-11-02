@@ -7,12 +7,24 @@ public class OptionsAndTargetTests
 {
 	private static SaltClientOptions Valid() => new() { BaseUrl = "https://salt.example.test", Username = "u", Password = "p" };
 
+#pragma warning disable CS0618 // The obsolete alias is under test
+	[Fact]
+	public void ReadOnlyAlias_ReadsAndWritesIsReadOnly()
+	{
+		var options = new SaltClientOptions { ReadOnly = true };
+
+		options.IsReadOnly.Should().BeTrue();
+		options.IsReadOnly = false;
+		options.ReadOnly.Should().BeFalse();
+	}
+#pragma warning restore CS0618
+
 	[Fact]
 	public void TheDefaults_AreAsDocumented()
 	{
 		var options = new SaltClientOptions();
 
-		options.ReadOnly.Should().BeFalse();
+		options.IsReadOnly.Should().BeFalse();
 		options.AllowRawLowstate.Should().BeFalse();
 		options.Eauth.Should().Be("file");
 		options.HttpClientTimeoutSeconds.Should().Be(150);
@@ -70,7 +82,7 @@ public class OptionsAndTargetTests
 		using var context = new SaltTestContext(o =>
 		{
 			o.BaseUrl = "https://salt.example.test/salt-api/";
-			o.ReadOnly = true;
+			o.IsReadOnly = true;
 		});
 		context.Server.OnRun("ping-one.json", r => r.Path == "/salt-api/").OnGet("/salt-api/keys", "keys.json");
 		context.Server.On(r => r.Path == "/salt-api/login" ? FakeSaltServer.Json(Fixtures.Load("login-ok.json").Replace("<token>", "path-token", StringComparison.Ordinal)) : null);

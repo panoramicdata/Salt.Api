@@ -12,7 +12,7 @@ namespace Salt.Api;
 /// </para>
 /// <para>
 /// Read-only enforcement is done by this client, not by the server. A Salt account with full rights can
-/// run any function on any minion, so set <see cref="ReadOnly"/> to <see langword="true"/> for any consumer
+/// run any function on any minion, so set <see cref="IsReadOnly"/> to <see langword="true"/> for any consumer
 /// that only reads (dashboards, reports).
 /// </para>
 /// </remarks>
@@ -56,7 +56,17 @@ public partial class SaltClientOptions
 	/// with exact minion ids, a change reference, a confirmation flag and a recent successful dry run, and arbitrary
 	/// lowstate needs <see cref="AllowRawLowstate"/>.
 	/// </remarks>
-	public bool ReadOnly { get; set; }
+	public bool IsReadOnly { get; set; }
+
+	/// <summary>
+	/// Use <see cref="IsReadOnly"/>.
+	/// </summary>
+	[Obsolete("Use IsReadOnly")]
+	public bool ReadOnly
+	{
+		get => IsReadOnly;
+		set => IsReadOnly = value;
+	}
 
 	/// <summary>
 	/// When <see langword="true"/>, <see cref="Lowstate.Raw(string, string)"/> lowstates may be executed. Defaults to <see langword="false"/>.
@@ -146,7 +156,7 @@ public partial class SaltClientOptions
 	/// </summary>
 	/// <remarks>
 	/// In read-only mode this function must be on the read-only allow-list; a custom function works only with
-	/// <see cref="ReadOnly"/> = <see langword="false"/>. The allow-list is fixed and cannot be extended by configuration,
+	/// <see cref="IsReadOnly"/> = <see langword="false"/>. The allow-list is fixed and cannot be extended by configuration,
 	/// so in read-only mode a function other than <c>patchreport.status</c> throws
 	/// <see cref="SaltReadOnlyViolationException"/> before any request is sent.
 	/// </remarks>
@@ -219,7 +229,7 @@ public partial class SaltClientOptions
 
 	/// <summary>
 	/// A copy, so that changing the caller's options after the client is built (for example turning off
-	/// <see cref="ReadOnly"/>) has no effect on it.
+	/// <see cref="IsReadOnly"/>) has no effect on it.
 	/// </summary>
 	internal SaltClientOptions Snapshot() => (SaltClientOptions)MemberwiseClone();
 
@@ -227,7 +237,7 @@ public partial class SaltClientOptions
 	/// Returns a description of the options without the password.
 	/// </summary>
 	public override string ToString()
-		=> $"{nameof(SaltClientOptions)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(Username)} = {Username}, {nameof(ReadOnly)} = {ReadOnly} }}";
+		=> $"{nameof(SaltClientOptions)} {{ {nameof(BaseUrl)} = {BaseUrl}, {nameof(Username)} = {Username}, {nameof(IsReadOnly)} = {IsReadOnly} }}";
 
 	// \z rather than $: $ also matches before a trailing newline.
 	[GeneratedRegex(@"^[A-Za-z0-9_][A-Za-z0-9_.-]*\z", RegexOptions.CultureInvariant)]

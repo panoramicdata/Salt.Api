@@ -124,7 +124,7 @@ public class PatchWorkflowTests
 	[Fact]
 	public async Task Submit_TurnsALocalCallIntoAJob()
 	{
-		using var context = new SaltTestContext(o => o.ReadOnly = true);
+		using var context = new SaltTestContext(o => o.IsReadOnly = true);
 		context.Server.On(r => r.IsRun ? FakeSaltServer.Json("""{"return":[{"jid":"1","minions":["vm-01"]}]}""") : null);
 
 		var job = await context.Client.SubmitAsync(Lowstate.PatchStatus(MinionTarget.List("vm-01")), TestContext.Current.CancellationToken);
