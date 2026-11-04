@@ -94,7 +94,7 @@ internal static class TestHandlers
 			BaseUrl = "https://salt.example.test",
 			Username = "u",
 			Password = "p",
-			ReadOnly = readOnly,
+			IsReadOnly = readOnly,
 			MaxAttemptCount = 5,
 		};
 		return new SaltAuthenticatingHandler(options, NullLogger.Instance, server, TimeProvider.System, (_, _) => Task.CompletedTask, "test");

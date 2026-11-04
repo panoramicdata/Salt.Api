@@ -196,7 +196,7 @@ public class PatchContentOptionsTests
 	{
 		using var context = new SaltTestContext(o =>
 		{
-			o.ReadOnly = true;
+			o.IsReadOnly = true;
 			o.PatchStatusFunction = "site_report.status";
 		});
 		context.Server.OnRun("patchreport-one.json");
@@ -210,7 +210,7 @@ public class PatchContentOptionsTests
 	[Fact]
 	public async Task PatchStatus_WithTheDefaultFunction_IsPermittedInReadOnlyMode()
 	{
-		using var context = new SaltTestContext(o => o.ReadOnly = true);
+		using var context = new SaltTestContext(o => o.IsReadOnly = true);
 		context.Server.OnRun("patchreport-one.json");
 
 		var result = await context.Client.GetPatchStatusAsync(MinionTarget.List("vm-01"), TestContext.Current.CancellationToken);

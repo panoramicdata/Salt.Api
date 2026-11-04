@@ -13,18 +13,18 @@ tool can use to dry-run and apply the patch state, without a forbidden or accide
 |---|---|---|
 | Package and repository | `Salt.Api`, public GitHub repository | Matches the `Meraki.Api` and `LogicMonitor.Api` naming. |
 | HTTP stack | Refit over `HttpClient`, with System.Text.Json | Refit with System.Text.Json is the standard for these packages. The single generic `POST /` is one Refit method; the union-typed per-minion values are mapped by hand from `JsonElement`. |
-| `ReadOnly` default | `false` | The maintainer's decision. Other guards keep the default client from being dangerous; see below. |
+| `IsReadOnly` default | `false` | The maintainer's decision. Other guards keep the default client from being dangerous; see below. |
 | Read-only enforcement | Two layers: the request builder, and the HTTP handler on the outgoing bytes | The server does not enforce read-only for a full-rights account, so the client must. A builder that cannot produce a forbidden call is better than a check that can be forgotten; the handler is the backstop. |
 | Raw lowstate | Needs `AllowRawLowstate` (default `false`), and is still allow-list-checked in read-only mode | Arbitrary lowstate bypasses the apply guards, so it is opt-in. |
-| Real apply | A separate request type with exact ids, a change reference, a confirmation flag, at most 8 ids by default, a recent successful dry run by the same client, and no patch run in progress on those minions | Makes an accidental apply impossible through the typed API, whatever the `ReadOnly` setting. |
+| Real apply | A separate request type with exact ids, a change reference, a confirmation flag, at most 8 ids by default, a recent successful dry run by the same client, and no patch run in progress on those minions | Makes an accidental apply impossible through the typed API, whatever the `IsReadOnly` setting. |
 | Production versus test | Never inferred from the URL; the apply guards always apply | The package must not assume which estate it talks to. |
 | Dry run in read-only mode | Refused | A dry run refreshes apt and takes the apt lock, and a mistaken omission of `test` would be a real apply. |
 | Retries | 401 once (after a fresh login) and 429 for everything; 502, 503 and 504 for allow-listed calls only | A state-changing request must never be sent twice. |
 | Long operations | `local_async` plus polling `GET /jobs/{jid}` | Synchronous calls block, and a proxy may close them. |
 | `GET /minions` | No method | It returns every grain of every minion. |
 | Request bodies | Always sent with a Content-Length | Measured live: `rest_cherrypy` answers a chunked JSON body with HTTP 500. |
-| Options | Copied when the client is built | Turning off `ReadOnly` on a shared options object must not change a live client. |
-| Estate-specific Salt content | `PatchStatusFunction`, `PatchStateName` and `PackageStateId` options, defaulting to the original names; the read-only allow-list stays fixed | A public package must not hard-code one estate's custom module and state. Letting configuration extend the allow-list would let a typo or a hostile config permit a write in read-only mode, so a custom status function needs `ReadOnly = false`. |
+| Options | Copied when the client is built | Turning off `IsReadOnly` on a shared options object must not change a live client. |
+| Estate-specific Salt content | `PatchStatusFunction`, `PatchStateName` and `PackageStateId` options, defaulting to the original names; the read-only allow-list stays fixed | A public package must not hard-code one estate's custom module and state. Letting configuration extend the allow-list would let a typo or a hostile config permit a write in read-only mode, so a custom status function needs `IsReadOnly = false`. |
 
 ## Units
 

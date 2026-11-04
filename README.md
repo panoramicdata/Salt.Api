@@ -35,7 +35,7 @@ using var client = new SaltClient(new SaltClientOptions
 	BaseUrl = "https://salt.example.com",
 	Username = "api-user",
 	Password = passwordFromYourSecretStore, // never from source code
-	ReadOnly = true,                        // recommended for anything that only reads
+	IsReadOnly = true,                        // recommended for anything that only reads
 });
 
 // Patch status of two minions
@@ -83,7 +83,7 @@ without the module returns a string, which is reported as a failure.
 
 ## Read-only mode
 
-`ReadOnly` defaults to **`false`**. **Set it to `true` for every consumer that only reads**, such as dashboards and
+`IsReadOnly` defaults to **`false`**. **Set it to `true` for every consumer that only reads**, such as dashboards and
 reports. In read-only mode the client permits only this list, matched exactly and case-sensitively. Anything else
 throws `SaltReadOnlyViolationException` **before any request, including the login, is sent**:
 
@@ -118,7 +118,7 @@ The allow-list is enforced in two places:
    `AllowRawLowstate = true` (default `false`).
 2. **The HTTP handler.** It checks the exact bytes about to be sent, so a request built any other way is refused too.
 
-The options are copied when the client is built, so turning off `ReadOnly` afterwards has no effect on that client.
+The options are copied when the client is built, so turning off `IsReadOnly` afterwards has no effect on that client.
 
 ## Per-minion results
 
@@ -140,7 +140,7 @@ The client never throws for one minion's failure. It throws only for HTTP-level 
 ## Patching
 
 ```csharp
-using var client = new SaltClient(new SaltClientOptions { /* ... */ ReadOnly = false });
+using var client = new SaltClient(new SaltClientOptions { /* ... */ IsReadOnly = false });
 var ids = new[] { "web-01", "web-02" };
 
 // 1. Dry run: reports what would change. Runs as an async job and polls until done.
@@ -167,7 +167,7 @@ var after = await client.GetPatchStatusAsync(MinionTarget.List(ids), ct);
 
 `PatchApplyAsync` refuses the request with `SaltPatchGuardException`, **before anything is sent**, unless:
 
-- `ReadOnly` is false;
+- `IsReadOnly` is false;
 - `ConfirmRealApply` is true;
 - `ChangeReference` is set;
 - the minion ids are exact, with no glob, comma or whitespace;
@@ -197,7 +197,7 @@ against.
 | `PackageStateId` | `patch-apply` | The `__id__` of the `pkg` state in that SLS whose `changes` list the upgrades as `{"<package>": {"old": "...", "new": "..."}}`, for example a `pkg.uptodate` state. It is exposed as `PatchStateRun.PackageState`. |
 
 The read-only allow-list is fixed and cannot be extended by configuration. A custom `PatchStatusFunction` therefore
-works only with `ReadOnly = false`. In read-only mode it throws `SaltReadOnlyViolationException` before any request
+works only with `IsReadOnly = false`. In read-only mode it throws `SaltReadOnlyViolationException` before any request
 is sent.
 
 ## Behaviours handled
@@ -229,7 +229,7 @@ These were measured against a live Salt 3008 `rest_cherrypy` deployment behind H
 | `BaseUrl` | (required) | https only; no default estate |
 | `Username`, `Password` | (required) | or `PasswordProvider`, asked at each login |
 | `Eauth` | `file` | |
-| `ReadOnly` | `false` | set `true` for read-only consumers |
+| `IsReadOnly` | `false` | set `true` for read-only consumers |
 | `AllowRawLowstate` | `false` | needed for `Lowstate.Raw` |
 | `HttpClientTimeoutSeconds` | 150 | per request; must exceed `DefaultMinionTimeoutSeconds` |
 | `DefaultMinionTimeoutSeconds` | 120 | lowstate `timeout` for `local` calls |

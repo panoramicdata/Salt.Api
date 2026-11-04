@@ -74,7 +74,7 @@ internal sealed partial class SaltAuthenticatingHandler : DelegatingHandler
 		var relativePath = GetRelativePath(request.RequestUri);
 		var body = await BufferContentAsync(request, cancellationToken).ConfigureAwait(false);
 		var readOnlyRefusal = ReadOnlyPolicy.CheckRequest(request.Method, relativePath, body);
-		if (_options.ReadOnly && readOnlyRefusal is not null)
+		if (_options.IsReadOnly && readOnlyRefusal is not null)
 		{
 			throw new SaltReadOnlyViolationException(readOnlyRefusal);
 		}
