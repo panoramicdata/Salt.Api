@@ -63,7 +63,7 @@ jobs:
     # against the working directory, so pass it absolute.
     - name: Run unit tests with coverage
       run: >-
-        ./Salt.Api.Test/bin/Debug/net10.0/Salt.Api.Test
+        ./Salt.Api.Test/bin/Debug/net11.0/Salt.Api.Test
         --coverage
         --coverage-settings ${{ github.workspace }}/coverage.config
         --coverage-output-format cobertura
@@ -75,7 +75,7 @@ jobs:
       uses: codacy/codacy-coverage-reporter-action@v1
       with:
         project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-        coverage-reports: Salt.Api.Test/bin/Debug/net10.0/TestResults/coverage.cobertura.xml
+        coverage-reports: Salt.Api.Test/bin/Debug/net11.0/TestResults/coverage.cobertura.xml
 
     - name: Upload coverage artifact
       if: always()
@@ -83,7 +83,7 @@ jobs:
       uses: actions/upload-artifact@v7
       with:
         name: coverage
-        path: Salt.Api.Test/bin/Debug/net10.0/TestResults/coverage.cobertura.xml
+        path: Salt.Api.Test/bin/Debug/net11.0/TestResults/coverage.cobertura.xml
         retention-days: 7
 
   publish:
