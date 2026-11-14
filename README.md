@@ -2,7 +2,7 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Salt.Api.svg)](https://www.nuget.org/packages/Salt.Api)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![.NET 11.0](https://img.shields.io/badge/.NET-10.0-512BD4.svg)](https://dotnet.microsoft.com/)
+[![.NET 11.0](https://img.shields.io/badge/.NET-11.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![CI](https://github.com/panoramicdata/Salt.Api/actions/workflows/ci.yml/badge.svg)](https://github.com/panoramicdata/Salt.Api/actions/workflows/ci.yml)
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/8dbdaba778df48ea804b033a564f8e24)](https://app.codacy.com/gh/panoramicdata/Salt.Api/dashboard)
 [![Codacy Coverage](https://app.codacy.com/project/badge/Coverage/8dbdaba778df48ea804b033a564f8e24)](https://app.codacy.com/gh/panoramicdata/Salt.Api/dashboard)
