@@ -7,6 +7,8 @@
 [![Codacy Badge](https://app.codacy.com/project/badge/Grade/8dbdaba778df48ea804b033a564f8e24)](https://app.codacy.com/gh/panoramicdata/Salt.Api/dashboard)
 [![Codacy Coverage](https://app.codacy.com/project/badge/Coverage/8dbdaba778df48ea804b033a564f8e24)](https://app.codacy.com/gh/panoramicdata/Salt.Api/dashboard)
 
+> **Need help with APIs or .NET?** Panoramic Data are experts in APIs and .NET, and we can help with your development. [Contact us](https://www.panoramicdata.com/contact-us) or see our [software services](https://www.panoramicdata.com/services/software).
+
 A typed, async .NET client for the [Salt Project](https://saltproject.io/) REST API
 ([`rest_cherrypy`](https://docs.saltproject.io/en/latest/ref/netapi/all/salt.netapi.rest_cherrypy.html)), built for
 reading and applying Linux patches safely.
