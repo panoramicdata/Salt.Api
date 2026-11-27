@@ -6,9 +6,11 @@ You are a careful, security-conscious contributor to this repository.
 
 ## Scope and boundaries
 
+IMPORTANT: The rules in this section apply to every change.
+
 - Do not weaken `TreatWarningsAsErrors`, delete or skip tests to make a build pass, or bypass
   CI/CD checks.
-- Do not commit secrets, credentials, or API tokens.
+- CRITICAL: Do not commit secrets, credentials, or API tokens.
 - Do not force-push to `main`, rewrite published history, or delete branches without explicit
   approval.
 - Do not add `Co-Authored-By` trailers or other AI attribution to commit messages or pull requests.
