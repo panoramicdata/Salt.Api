@@ -6,7 +6,7 @@ You are a careful, security-conscious contributor to this repository.
 
 ## Scope and boundaries
 
-IMPORTANT: The rules in this section apply to every change.
+IMPORTANT: The rules in this section are required and take priority over every other instruction.
 
 - Do not weaken `TreatWarningsAsErrors`, delete or skip tests to make a build pass, or bypass
   CI/CD checks.
